@@ -71,6 +71,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.roundToInt
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 
 // ---------------- kapak ----------------
 @Composable
@@ -454,7 +456,31 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
             }
         }
 
-        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+        // kapağı sağa/sola kaydırarak şarkı değiştir
+        val swipe = remember { androidx.compose.animation.core.Animatable(0f) }
+        val swScope = rememberCoroutineScope()
+        val view = LocalView.current
+        LaunchedEffect(key) { if (swipe.value != 0f) { swipe.snapTo(-swipe.value.coerceIn(-1f, 1f) * 400f); swipe.animateTo(0f, tween(260)) } }
+        Box(Modifier.weight(1f).fillMaxWidth()
+            .pointerInput(Unit) {
+                val w = size.width.toFloat()
+                detectHorizontalDragGestures(
+                    onDragEnd = {
+                        val x = swipe.value
+                        swScope.launch {
+                            when {
+                                x < -w * 0.22f && p.hasNextMediaItem() -> { swipe.animateTo(-w, tween(160)); haptic(view); p.seekToNextMediaItem(); p.play() }
+                                x > w * 0.22f && (p.hasPreviousMediaItem() || p.currentPosition > 3000) -> { swipe.animateTo(w, tween(160)); haptic(view)
+                                    if (p.hasPreviousMediaItem()) p.seekToPreviousMediaItem() else { p.seekTo(0); swipe.snapTo(0f) }; p.play() }
+                                else -> swipe.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 0.7f))
+                            }
+                        }
+                    },
+                    onDragCancel = { swScope.launch { swipe.animateTo(0f) } }
+                ) { ch, dx -> ch.consume(); swScope.launch { swipe.snapTo(swipe.value + dx) } }
+            }
+            .graphicsLayer { translationX = swipe.value; alpha = 1f - (kotlin.math.abs(swipe.value) / (size.width * 1.4f)).coerceIn(0f, 0.6f); rotationZ = swipe.value / size.width * 6f },
+            contentAlignment = Alignment.Center) {
             if (npView == 1) Column { Box(Modifier.weight(1f)) { LyricsView(lyrics.value.map { -1L to it.second }.filter { it.second.isNotBlank() }, pos) { } }
                 if (lyricsSrc.isNotEmpty()) Text(lyricsSrc, fontSize = 10.sp, color = Color.White.copy(alpha = 0.45f)) }
             else if (npView == 2) VizView(art, tint, NowState.playing)

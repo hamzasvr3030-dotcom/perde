@@ -132,6 +132,7 @@ fun MoreScreen(vm: LibVM, go: (Route) -> Unit) {
             }
             Group("Uygulama") {
                 GroupRow(Icons.Filled.SystemUpdate, "Güncellemeleri denetle", if (checking) "Denetleniyor…" else "Sürüm ${Updater.current(ctx)}", chevron = !checking) { checkUpdate() }
+                GroupRow(Icons.Filled.AutoGraph, "Aylık özet", "Bu ay ne dinledin, ne izledin") { go(Route.SummaryR) }
                 GroupRow(Icons.Filled.History, "Dinleme geçmişi", "Ne zaman ne dinledin") { go(Route.ListenHistR) }
                 GroupRow(Icons.Filled.BugReport, "Hata raporu", "Sorun olursa kopyalayıp gönder") { go(Route.ReportR) }
                 GroupRow(Icons.Filled.Info, "Uygulama hakkında", last = true) { go(Route.SettingsPage(6)) }
@@ -185,6 +186,9 @@ fun SettingsPage(vm: LibVM, section: Int, back: () -> Unit) {
                             SetChoice("Yumuşak geçiş", listOf("Kapalı", "2 sn", "4 sn", "6 sn", "8 sn", "12 sn"), listOf(0, 2, 4, 6, 8, 12).indexOf(Prefs.crossfade).coerceAtLeast(0)) { Prefs.crossfade = listOf(0, 2, 4, 6, 8, 12)[it]; ver++ }
                             GroupSwitch(Icons.Filled.SkipNext, "Sessizliği atla", "Şarkı başı ve sonundaki sessizlik", Prefs.skipSilence) { Prefs.skipSilence = it; Engine.player?.skipSilenceEnabled = it }
                             GroupSwitch(Icons.Filled.History, "Şarkıları kaldığı yerden sürdür", "Yarıda bıraktığın şarkı oradan başlar", Prefs.resumeMusic) { Prefs.resumeMusic = it }
+                            GroupSwitch(Icons.Filled.Image, "Eksik kapakları internetten bul", "Kapağı olmayan şarkıya kapak bulup kalıcı kaydeder", Prefs.fetchCovers) { Prefs.fetchCovers = it }
+                            GroupRow(Icons.Filled.ImageSearch, "Eksik kapakları şimdi bul", "Bütün şarkılar taranır") { toast(ctx, "Kapaklar aranıyor…"); CoverNet.fetchAll(ctx, vm.songs) { n -> toast(ctx, if (n > 0) "$n kapak bulundu" else "Yeni kapak bulunamadı") } }
+                            GroupSwitch(Icons.Filled.Palette, "Kapak rengini tema rengi yap", "Çalan şarkının kapağına göre uygulamanın rengi değişir", Prefs.coverAccent) { Prefs.coverAccent = it; CoverTint.update(ctx, if (it) NowState.key.takeIf { k -> k.isNotEmpty() } else null) }
                             GroupSwitch(Icons.Filled.Headphones, "Kulaklık takınca devam et", "Kablolu ya da Bluetooth kulaklık bağlanınca son müzik sürer", Prefs.headsetResume) { Prefs.headsetResume = it }
                             GroupSwitch(Icons.Filled.VolumeUp, "Şarkıya göre sesi hatırla", null, Prefs.rememberLevels, last = true) { Prefs.rememberLevels = it }
                         }

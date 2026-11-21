@@ -96,6 +96,7 @@ class Job(
     var lastRaw = 0f
     // boyut takibi: kaç MB inecek, ne kadarı indi
     var expectFiles = 1
+    @Volatile var bps = 0L
     var durSec = 0
     @Volatile var expected = 0L      // yt-dlp'nin indirme öncesi bildirdiği toplam bayt
     var curMax = 0L
@@ -124,6 +125,12 @@ data class Follow(val url: String, val title: String, val opts: DlOpts, val play
 
 object Dl {
     val jobs = mutableStateListOf<Job>()
+    val speedHist = mutableStateListOf<Long>()
+    var totalBps by androidx.compose.runtime.mutableLongStateOf(0L)
+    fun sampleSpeed() {
+        val s = jobs.filter { it.state == Job.RUN }.sumOf { it.bps }
+        totalBps = s; speedHist.add(s); while (speedHist.size > 30) speedHist.removeAt(0)
+    }
     val groups = mutableStateListOf<DlGroup>()
     val history = mutableStateListOf<HistItem>()
     val follows = mutableStateListOf<Follow>()
@@ -425,6 +432,7 @@ object Dl {
         speedRx.find(line)?.let { m ->
             val v = m.groupValues[1].toFloatOrNull() ?: 0f
             val mb = when (m.groupValues[2]) { "K" -> v / 1024f; "G" -> v * 1024f; "" -> v / 1048576f; else -> v }
+            j.bps = (mb * 1048576).toLong()
             j.speed = if (mb >= 1f) String.format(Locale.forLanguageTag("tr"), "%.1f MB/sn", mb) else String.format(Locale.forLanguageTag("tr"), "%.0f KB/sn", mb * 1024)
         }
         j.eta = etaRx.find(line)?.groupValues?.get(1)?.let { "$it kaldı" } ?: ""
@@ -438,6 +446,7 @@ object Dl {
     private fun startDiskWatch(j: Job, tmp: File, sizeFile: File): () -> Unit {
         val run = java.util.concurrent.atomic.AtomicBoolean(true)
         Thread {
+            var lastGot = 0L; var lastT = System.currentTimeMillis()
             while (run.get()) {
                 if (j.expected <= 0) j.expected = try { sizeFile.readText().trim().lines().lastOrNull()?.trim()?.toLongOrNull() ?: 0L } catch (_: Exception) { 0L }
                 val e = j.expected
@@ -445,6 +454,9 @@ object Dl {
                     val got = dirSize(tmp)
                     if (got > 0 && j.tFirst == 0L) j.tFirst = System.currentTimeMillis()
                     j.gotBytes = minOf(got, e); j.totalBytes = e; j.totalExact = true
+                    val now = System.currentTimeMillis()
+                    if (now > lastT && got >= lastGot) { val inst = (got - lastGot) * 1000 / (now - lastT); j.bps = if (j.bps == 0L) inst else (j.bps * 6 + inst * 4) / 10 }
+                    lastGot = got; lastT = now
                     val f = (got.toFloat() / e * 0.97f).coerceAtMost(0.97f)
                     if (f > j.progress) j.progress = f                            // asla geri gitmez
                     if (got >= e * 0.985) {
@@ -662,7 +674,9 @@ class DownloadService : Service() {
         }
         val text = buildString {
             if (run.size == 1) append(run[0].phase).append(" · %").append((run[0].progress * 100).toInt())
+            if (run.size == 1 && run[0].totalBytes > 0) append(" · ").append(mbOf(run[0].gotBytes)).append(" / ").append(mbOf(run[0].totalBytes)).append(" MB")
             if (run.size == 1 && run[0].speed.isNotEmpty()) append(" · ").append(run[0].speed)
+            if (run.size > 1 && Dl.totalBps > 0) { append(fmtBps(Dl.totalBps)).append(' ').append(speedUnit(Dl.totalBps)) }
             if (act.size > run.size) { if (isNotEmpty()) append(" · "); append("${act.size - run.size} sırada") }
         }
         val avg = if (run.isEmpty()) 0f else run.map { it.progress }.average().toFloat()
@@ -672,7 +686,8 @@ class DownloadService : Service() {
 
     private val tick = object : Runnable {
         override fun run() {
-            if (Dl.activeCount == 0) { ServiceCompat.stopForeground(this@DownloadService, ServiceCompat.STOP_FOREGROUND_REMOVE); stopSelf(); started = false; return }
+            if (Dl.activeCount == 0) { Dl.totalBps = 0; Dl.speedHist.clear(); ServiceCompat.stopForeground(this@DownloadService, ServiceCompat.STOP_FOREGROUND_REMOVE); stopSelf(); started = false; return }
+            Dl.sampleSpeed()
             nm.notify(41, notif())
             h.postDelayed(this, 1000)
         }

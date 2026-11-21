@@ -87,8 +87,9 @@ object Art {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount
     }
     private val miss = HashSet<String>()
+    var ver by androidx.compose.runtime.mutableIntStateOf(0)
 
-    suspend fun load(ctx: Context, key: String, uri: Uri?, path: String?, px: Int = 512): Bitmap? {
+    suspend fun load(ctx: Context, key: String, uri: Uri?, path: String?, px: Int = 512, net: Boolean = true): Bitmap? {
         val ck = "$key@$px"
         cache.get(ck)?.let { return it }
         if (ck in miss) return null
@@ -108,8 +109,10 @@ object Art {
                     }
                 }
             } catch (_: Exception) { null }
+            if (bmp == null) bmp = try { CoverNet.cached(ctx, key, px) } catch (_: Exception) { null }
             bmp
         }
+        if (b == null && net) CoverNet.request(ctx, key)
         if (b != null) cache.put(ck, b) else synchronized(miss) { miss += ck }
         return b
     }

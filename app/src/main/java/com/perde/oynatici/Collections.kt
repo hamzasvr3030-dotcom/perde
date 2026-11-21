@@ -85,25 +85,31 @@ object Stats {
     @Synchronized fun flush() {
         val k = pendKey ?: return
         if (pendMs <= 0) return
-        val day = "st:" + fmt.format(Date())
+        val d = fmt.format(Date())
+        val day = "st:$d"
+        val kind = (if (Music.byKey(k) != null || isAudioName(k)) "stm:" else "stv:") + d
         Prefs.sp.edit()
             .putLong(day, Prefs.sp.getLong(day, 0) + pendMs)
+            .putLong(kind, Prefs.sp.getLong(kind, 0) + pendMs)
             .putLong("sv:$k", Prefs.sp.getLong("sv:$k", 0) + pendMs)
             .apply()
         pendMs = 0
     }
 
-    fun day(offset: Int): Long {
+    fun day(offset: Int, prefix: String = "st:"): Long {
         val c = Calendar.getInstance(); c.add(Calendar.DAY_OF_YEAR, -offset)
-        return Prefs.sp.getLong("st:" + fmt.format(c.time), 0)
+        return Prefs.sp.getLong(prefix + fmt.format(c.time), 0)
     }
 
+    /** Bir ayın toplamı (ym = "202611"). */
+    fun month(prefix: String, ym: String): Long = Prefs.sp.all.entries.filter { it.key.startsWith(prefix + ym) && it.key.length == prefix.length + 8 }.sumOf { (it.value as? Long) ?: 0L }
+
     /** Son 7 gün (bugün sonda): kısa gün adı ve süre. */
-    fun last7(): List<Pair<String, Long>> {
+    fun last7(prefix: String = "st:"): List<Pair<String, Long>> {
         val names = SimpleDateFormat("EEE", Locale.forLanguageTag("tr"))
         return (6 downTo 0).map { o ->
             val c = Calendar.getInstance(); c.add(Calendar.DAY_OF_YEAR, -o)
-            names.format(c.time).replaceFirstChar { it.titlecase() } to day(o)
+            names.format(c.time).replaceFirstChar { it.titlecase() } to day(o, prefix)
         }
     }
 

@@ -2,6 +2,9 @@
 
 package com.perde.oynatici
 
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.ui.draw.alpha
+import androidx.compose.foundation.horizontalScroll
 import android.content.Intent
 import android.net.Uri
 import android.os.SystemClock
@@ -79,7 +82,7 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 fun ArtImage(key: String, uri: Uri?, path: String?, modifier: Modifier, shape: Shape = RoundedCornerShape(12.dp), px: Int = 256) {
     val ctx = LocalContext.current
     var bmp by remember(key, px) { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(key, px) { bmp = Art.load(ctx, key, uri, path, px)?.asImageBitmap() }
+    LaunchedEffect(key, px, Art.ver) { bmp = Art.load(ctx, key, uri, path, px)?.asImageBitmap() }
     Box(modifier.clip(shape).background(Brush.linearGradient(listOf(AccentDeep, Surf2))), contentAlignment = Alignment.Center) {
         val b = bmp
         if (b != null) Image(b, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
@@ -157,9 +160,9 @@ fun MusicScreen(vm: LibVM, go: (Route) -> Unit) {
         IconButton(onClick = { if (songs.isNotEmpty()) { Engine.playSongs(ctx, songs, songs.indices.random(), shuffle = true); AppState.showNow = true } }) { Icon(Icons.Filled.Shuffle, "Karışık çal") }
     }) {
         Column {
-            val tabs = listOf("Şarkılar", "Albümler", "Sanatçılar", "Klasörler", "Listeler")
-            ScrollableTabRow(selectedTabIndex = tab, containerColor = Bg, edgePadding = 12.dp, divider = {}) {
-                tabs.forEachIndexed { i, t -> Tab(tab == i, { tab = i }, text = { Text(t, fontWeight = if (tab == i) FontWeight.Bold else FontWeight.Normal) }) }
+            val tabs = listOf("Senin için", "Şarkılar", "Albümler", "Sanatçılar", "Klasörler", "Listeler")
+            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(tabs.size) { i -> Pill(tabs[i], tab == i) { tab = i } }
             }
             if (songs.isEmpty()) {
                 if (vm.loading) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Accent) }
@@ -167,11 +170,12 @@ fun MusicScreen(vm: LibVM, go: (Route) -> Unit) {
                 return@Column
             }
             when (tab) {
-                0 -> LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+                0 -> ForYouPage(vm, go)
+                1 -> LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
                     item { PlayButtons(songs) }
                     itemsIndexed(songs, key = { _, s -> s.key }) { i, s -> SongRow(s, { Engine.playSongs(ctx, songs, i) }) { sel = s } }
                 }
-                1 -> {
+                2 -> {
                     val albums = remember(songs) { Music.albums(songs) }
                     LazyVerticalGrid(GridCells.Adaptive(156.dp), contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                         items(albums, key = { it.id }) { a ->
@@ -184,7 +188,7 @@ fun MusicScreen(vm: LibVM, go: (Route) -> Unit) {
                         }
                     }
                 }
-                2 -> {
+                3 -> {
                     val artists = remember(songs) { Music.artists(songs) }
                     LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
                         items(artists, key = { it.name }) { a ->
@@ -199,7 +203,7 @@ fun MusicScreen(vm: LibVM, go: (Route) -> Unit) {
                         }
                     }
                 }
-                3 -> {
+                4 -> {
                     val folders = remember(songs) { Music.folders(songs) }
                     LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
                         items(folders, key = { it.first }) { (p, l) ->
@@ -318,6 +322,7 @@ private fun SongActions(s: Song, vm: LibVM, dismiss: () -> Unit) {
                 val playing = Engine.player != null && NowState.isMusic
                 Engine.enqueue(ctx, listOf(s), next = true); if (playing) toast(ctx, "Bu şarkıdan sonra çalacak"); dismiss()
             }
+            ActionItem(Icons.Filled.Radio, "Bu şarkıdan radyo başlat") { dismiss(); Mixes.startRadio(ctx, s, vm.songs) }
             ActionItem(Icons.AutoMirrored.Filled.PlaylistAdd, "Sıranın sonuna ekle") {
                 val playing = Engine.player != null && NowState.isMusic
                 Engine.enqueue(ctx, listOf(s), next = false); if (playing) toast(ctx, "Sıranın sonuna eklendi"); dismiss()
@@ -447,6 +452,7 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
                         menu = false; close()
                         ctx.startActivity(Intent(ctx, PlayerActivity::class.java).putExtra(PlayerActivity.EXTRA_BACK_TO_VIDEO, true))
                     }, leadingIcon = { Icon(Icons.Filled.OndemandVideo, null) })
+                    if (song != null) DropdownMenuItem({ Text("Bu şarkıdan radyo") }, { menu = false; Mixes.startRadio(ctx, song, Music.cache) }, leadingIcon = { Icon(Icons.Filled.Radio, null) })
                     DropdownMenuItem({ Text("Listeye ekle") }, { menu = false; sheet = NpSheet.PLAYLIST }, leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, null) })
                     if (song != null) DropdownMenuItem({ Text("Paylaş") }, {
                         menu = false; ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("audio/*").putExtra(Intent.EXTRA_STREAM, song.uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Paylaş"))
@@ -487,11 +493,15 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
             if (npView == 1) Column { Box(Modifier.weight(1f)) { LyricsView(lyrics.value.map { -1L to it.second }.filter { it.second.isNotBlank() }, pos) { } }
                 if (lyricsSrc.isNotEmpty()) Text(lyricsSrc, fontSize = 10.sp, color = Color.White.copy(alpha = 0.45f)) }
             else if (npView == 2) VizView(art, tint, NowState.playing)
-            else Box(Modifier.fillMaxWidth().aspectRatio(1f).scale(artScale).shadow(30.dp, RoundedCornerShape(28.dp)).clip(RoundedCornerShape(28.dp))
+            else Box(contentAlignment = Alignment.Center) {
+                PeekArt(p.previousMediaItemIndex, p, Modifier.align(Alignment.CenterStart).offset(x = (-196).dp))
+                PeekArt(p.nextMediaItemIndex, p, Modifier.align(Alignment.CenterEnd).offset(x = 196.dp))
+                Box(Modifier.fillMaxWidth(0.84f).aspectRatio(1f).scale(artScale).shadow(30.dp, RoundedCornerShape(28.dp)).clip(RoundedCornerShape(28.dp))
                 .background(Brush.linearGradient(listOf(tint, AccentDeep))), contentAlignment = Alignment.Center) {
                 val b = art
                 if (b != null) Image(b, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                 else Icon(Icons.Filled.MusicNote, null, tint = Color.White.copy(alpha = 0.6f), modifier = Modifier.fillMaxSize(0.4f))
+            }
             }
         }
 
@@ -537,7 +547,8 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
             }
         }
 
-        Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+        NextCard(p) { sheet = NpSheet.QUEUE }
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             NpTool(Icons.Filled.Lyrics, "Sözler", npView == 1) { npView = if (npView == 1) 0 else 1 }
             NpTool(Icons.Filled.GraphicEq, "Dalga", npView == 2) { npView = if (npView == 2) 0 else 2 }
             NpTool(Icons.AutoMirrored.Filled.QueueMusic, "Sıra", false) { sheet = NpSheet.QUEUE }
@@ -577,9 +588,10 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
 
 @Composable
 private fun NpTool(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, active: Boolean, onClick: () -> Unit) {
-    Column(Modifier.clip(RoundedCornerShape(14.dp)).clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(icon, label, tint = if (active) Accent else Color.White.copy(alpha = 0.85f))
-        Text(label, fontSize = 11.sp, color = if (active) Accent else Color.White.copy(alpha = 0.7f))
+    Row(Modifier.clip(CircleShape).background(if (active) Accent else Color.White.copy(alpha = 0.1f)).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, label, tint = Color.White, modifier = Modifier.size(18.dp))
+        Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.White, modifier = Modifier.padding(start = 6.dp))
     }
 }
 
@@ -652,6 +664,36 @@ private fun QueueContent() {
                     })
                 }
             }
+        }
+    }
+}
+
+
+@Composable
+private fun PeekArt(idx: Int, p: Player, m: Modifier) {
+    if (idx == C.INDEX_UNSET || idx < 0 || idx >= p.mediaItemCount) return
+    val k = p.getMediaItemAt(idx).mediaId; val s = Music.byKey(k)
+    ArtImage(k, s?.uri, s?.path ?: k.takeIf { it.startsWith("/") }, m.size(220.dp).alpha(0.35f), RoundedCornerShape(26.dp), 320)
+}
+
+@Composable
+private fun NextCard(p: Player, open: () -> Unit) {
+    val ni = p.nextMediaItemIndex
+    if (ni == C.INDEX_UNSET) return
+    val it = p.getMediaItemAt(ni); val s = Music.byKey(it.mediaId)
+    val rest = p.mediaItemCount - p.currentMediaItemIndex - 1
+    Column(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 10.dp).clip(RoundedCornerShape(18.dp)).background(Color.White.copy(alpha = 0.08f)).clickable(onClick = open).padding(horizontal = 14.dp, vertical = 10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("SIRADAKİ", fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp, color = Color.White.copy(alpha = 0.7f), modifier = Modifier.weight(1f))
+            if (rest > 1) Text("$rest şarkı", fontSize = 12.sp, color = Color.White.copy(alpha = 0.7f))
+        }
+        Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            ArtImage(it.mediaId, s?.uri, s?.path ?: it.mediaId.takeIf { k -> k.startsWith("/") }, Modifier.size(38.dp), RoundedCornerShape(9.dp), 128)
+            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                Text(it.mediaMetadata.title?.toString() ?: "", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(it.mediaMetadata.artist?.toString() ?: "", fontSize = 12.sp, color = Color.White.copy(alpha = 0.7f), maxLines = 1)
+            }
+            Icon(Icons.AutoMirrored.Filled.QueueMusic, null, tint = Color.White.copy(alpha = 0.7f))
         }
     }
 }

@@ -200,6 +200,7 @@ fun DownloadScreen(go: (Route) -> Unit) {
 
             // ---- indirmeler ----
             if (Dl.jobs.isNotEmpty()) {
+                item { SpeedPanel() }
                 item {
                     Row(Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("İndirmeler", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
@@ -217,7 +218,7 @@ fun DownloadScreen(go: (Route) -> Unit) {
     request?.let { (r, audio) ->
         ModalBottomSheet(onDismissRequest = { request = null }, containerColor = Surf, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
-                DlOptionsContent(audio, r.count) { o, at -> start(ctx, r, o, at); request = null }
+                DlOptionsContent(audio, r.count, (r as? DlReq.Singles)?.items?.singleOrNull()?.first) { o, at -> start(ctx, r, o, at); request = null }
             }
         }
     }
@@ -425,22 +426,28 @@ private fun JobRow(j: Job, compact: Boolean = false) {
         Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
             Text(j.title, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium, fontSize = 14.sp)
             val sub = when (j.state) {
-                Job.RUN -> listOf("%${(j.progress * 100).toInt()}",
-                    if (j.totalBytes > 0) "${fmtSize(j.gotBytes)} / ${if (j.totalExact) "" else "≈"}${fmtSize(j.totalBytes)}" else "",
-                    j.phase, j.speed, j.eta).filter { it.isNotEmpty() }.joinToString(" · ")
+                Job.RUN -> listOf(Web.site(j.url), j.phase).filter { it.isNotEmpty() }.joinToString(" · ")
                 Job.ERR -> j.error ?: "Hata"
                 Job.DONE -> "İndirildi · ${j.opts.label}" + (j.file?.let { " · " + fmtSize(File(it).length()) } ?: "") + (if (j.timing.isNotEmpty()) "\n" + j.timing else "")
                 else -> j.phase
             }
             Text(sub, color = when (j.state) { Job.ERR -> BAD; Job.DONE, Job.SKIP -> OK; else -> Muted }, fontSize = 12.sp, maxLines = 2)
             if (j.state == Job.RUN || j.state == Job.PAUSED || j.state == Job.Q) LinearProgressIndicator(progress = { j.progress }, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).height(6.dp).clip(CircleShape), color = Accent, trackColor = Surf2, drawStopIndicator = {})
+            if (j.state == Job.RUN) Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("%${(j.progress * 100).toInt()}", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                if (j.totalBytes > 0) Text(" · ${mbOf(j.gotBytes)} / ${if (j.totalExact) "" else "≈"}${mbOf(j.totalBytes)} MB", color = Muted, fontSize = 12.sp)
+                Spacer(Modifier.weight(1f))
+                Text(listOf(j.speed, j.eta.removeSuffix(" kaldı")).filter { it.isNotEmpty() }.joinToString(" · "), color = Muted, fontSize = 12.sp)
+            }
         }
         when (j.state) {
             Job.SCHED -> { TextButton(onClick = { Dl.startNow(j) }) { Text("Şimdi") }; IconButton(onClick = { Dl.cancel(j) }) { Icon(Icons.Filled.Close, "İptal", tint = Muted) } }
             Job.RUN, Job.Q, Job.WAIT -> { RoundBtn(Icons.Filled.Pause, "Duraklat") { Dl.pause(j) }; JobMenu(j) }
             Job.PAUSED -> { RoundBtn(Icons.Filled.PlayArrow, "Devam") { Dl.resume(j) }; JobMenu(j) }
             Job.ERR, Job.CANCEL -> { IconButton(onClick = { Dl.resume(j) }) { Icon(Icons.Filled.Refresh, "Tekrar dene", tint = Accent) }; if (!compact) IconButton(onClick = { Dl.remove(j) }) { Icon(Icons.Filled.Delete, "Kaldır", tint = Muted) } }
-            Job.DONE -> Icon(Icons.Filled.CheckCircle, null, tint = OK, modifier = Modifier.padding(8.dp))
+            Job.DONE -> j.file?.let { f -> Text(if (isAudioName(f)) "Çal" else "İzle", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                modifier = Modifier.clip(CircleShape).background(Accent).clickable { playKeys(ctx, listOf(f)) }.padding(horizontal = 14.dp, vertical = 8.dp)) }
+                ?: Icon(Icons.Filled.CheckCircle, null, tint = OK, modifier = Modifier.padding(8.dp))
             else -> Icon(Icons.Filled.Done, null, tint = Muted, modifier = Modifier.padding(8.dp))
         }
     }
@@ -494,8 +501,10 @@ private fun GroupCard(g: DlGroup) {
 
 // ---------------- seçenekler ----------------
 @Composable
-fun DlOptionsContent(audioInit: Boolean, count: Int, onStart: (DlOpts, Long) -> Unit) {
+fun DlOptionsContent(audioInit: Boolean, count: Int, url: String? = null, onStart: (DlOpts, Long) -> Unit) {
     var audio by remember { mutableStateOf(audioInit) }
+    val estCtx = LocalContext.current
+    val est by produceState<SizeEst.Info?>(null, url) { value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { SizeEst.of(estCtx, url) } }
     var h by remember { mutableIntStateOf(DlPrefs.height) }
     var fmt by remember { mutableStateOf(DlPrefs.audioFmt) }
     var kbps by remember { mutableIntStateOf(DlPrefs.kbps) }
@@ -517,7 +526,7 @@ fun DlOptionsContent(audioInit: Boolean, count: Int, onStart: (DlOpts, Long) -> 
     if (!audio) {
         OptLabel("Kalite")
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DlPrefs.HEIGHTS.forEach { v -> FilterChip(h == v, { h = v }, label = { Text(if (v >= 2160) "4K" else if (v == 1440) "2K" else "${v}p") }) }
+            DlPrefs.HEIGHTS.forEach { v -> FilterChip(h == v, { h = v }, label = { Text((if (v >= 2160) "4K" else if (v == 1440) "2K" else "${v}p") + (est?.video?.get(v)?.takeIf { it > 0 }?.let { " · " + fmtSize(it) } ?: "")) }) }
         }
         Text("Seçilen kalite yoksa en yakın düşük kalite iner. 4K için telefonun desteklemesi gerekir.", color = Muted, fontSize = 12.sp)
         OptSwitch("Altyazıyla indir", "Türkçe/İngilizce altyazı da iner, oynatırken kendiliğinden açılır", subs) { subs = it }
@@ -532,6 +541,7 @@ fun DlOptionsContent(audioInit: Boolean, count: Int, onStart: (DlOpts, Long) -> 
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(128, 192, 320).forEach { v -> FilterChip(kbps == v, { kbps = v }, label = { Text("$v kbps") }) }
         }
+        est?.dur?.takeIf { it > 0 }?.let { d -> Text("Tahmini boyut: ≈ ${fmtSize((kbps * 125 * d).toLong())}", color = Accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
         OptSwitch("Kapak ve şarkı bilgisi", "Kapak resmi, sanatçı, şarkı adı ve albüm dosyaya yazılır", meta) { meta = it }
         OptSwitch("Akıllı ad düzeltme", "\"Tarkan - Kuzu Kuzu (Official Video)\" → Tarkan / Kuzu Kuzu", smart) { smart = it }
         OptSwitch("SponsorBlock", "Sponsor reklamlarını ve müzik videolarındaki konuşma kısımlarını kes", sponsor) { sponsor = it }

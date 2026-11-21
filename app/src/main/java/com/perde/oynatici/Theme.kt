@@ -40,10 +40,12 @@ object ThemeState {
     )
     var accentIdx by mutableIntStateOf(0)
     var amoled by mutableStateOf(false)
+    /** Çalan şarkının kapağından gelen renk (açıksa vurgu rengi olur). */
+    var dyn by mutableStateOf<Color?>(null)
     fun load() { accentIdx = Prefs.accent; amoled = Prefs.amoled }
 }
 
-val Accent: Color get() = Color(ThemeState.ACCENTS.getOrElse(ThemeState.accentIdx) { ThemeState.ACCENTS[0] }.first)
+val Accent: Color get() = ThemeState.dyn ?: Color(ThemeState.ACCENTS.getOrElse(ThemeState.accentIdx) { ThemeState.ACCENTS[0] }.first)
 val AccentSoft: Color get() = lerp(Accent, Color.White, 0.45f)
 val AccentDeep: Color get() = lerp(Accent, Color.Black, 0.78f)
 val Bg: Color get() = if (ThemeState.amoled) Color.Black else Color(0xFF07080B)

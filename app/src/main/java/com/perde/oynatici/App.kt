@@ -18,6 +18,7 @@ class App : Application(), SingletonImageLoader.Factory {
         Report.init(this)
         ListenLog.init(this)
         Fg.init(this)
+        Shortcuts.setup(this)
         MediaWatch.start(this)
         Headset.start(this)
     }

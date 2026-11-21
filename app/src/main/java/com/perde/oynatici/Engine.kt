@@ -156,6 +156,7 @@ object Engine {
         lastMusicKey?.let { Levels.saveVol(it, am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) / max) }
         Levels.vol(k)?.let { v -> try { am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, Math.round(v.coerceIn(0f, 1f) * max), 0) } catch (_: Exception) { } }
         lastMusicKey = k
+        appCtx?.let { CoverTint.update(it, k) }
     }
 
     /** Müzikte şarkı sonunda sesi yavaşça kıs, yeni şarkıda yavaşça aç. */
@@ -319,7 +320,7 @@ object Engine {
         releaseEffects()
         player?.release()
         player = null
-        abA = -1; abB = -1; sleepAt = 0; sleepEnd = false; audioOnly = false
+        abA = -1; abB = -1; sleepAt = 0; sleepEnd = false; audioOnly = false; ThemeState.dyn = null
         delay.delayMs = 0
         NowState.refresh(); appCtx?.let { PerdeWidget.update(it); MusicWidget.update(it); PlayTile.request(it) }
     }

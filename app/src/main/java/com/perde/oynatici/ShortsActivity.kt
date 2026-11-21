@@ -190,7 +190,7 @@ private fun ShortsScreen(a: ShortsActivity) {
     dlFor?.let { it ->
         ModalBottomSheet(onDismissRequest = { dlFor = null }, containerColor = Surf) {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
-                DlOptionsContent(false, 1) { o, at -> Dl.addSingles(a, listOf(Triple(it.key, it.title, it.thumb)), o, at); dlFor = null; toast(a, "İndirme başladı") }
+                DlOptionsContent(false, 1, it.key) { o, at -> Dl.addSingles(a, listOf(Triple(it.key, it.title, it.thumb)), o, at); dlFor = null; toast(a, "İndirme başladı") }
             }
         }
     }

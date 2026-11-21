@@ -69,7 +69,7 @@ fun Page(title: String, back: (() -> Unit)?, actions: @Composable RowScope.() ->
             LargeTopAppBar(
                 title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Black) },
                 navigationIcon = { if (back != null) IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Geri") } },
-                actions = actions, scrollBehavior = sb,
+                actions = { ActionPill(actions) }, scrollBehavior = sb,
                 colors = TopAppBarDefaults.largeTopAppBarColors(containerColor = Bg, scrolledContainerColor = Surf)
             )
         }
@@ -90,8 +90,8 @@ fun Empty(icon: ImageVector, text: String) {
 @Composable
 fun SectionHeader(t: String, action: String? = null, onAction: () -> Unit = {}) {
     Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 18.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(t, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-        if (action != null) TextButton(onClick = onAction) { Text(action, color = Accent) }
+        Text(t, fontSize = 21.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+        if (action != null) TextButton(onClick = onAction) { Text(action, color = Accent, fontWeight = FontWeight.SemiBold) }
     }
 }
 
@@ -196,21 +196,11 @@ fun HomeScreen(vm: LibVM, go: (Route) -> Unit) {
     var videoSel by remember { mutableStateOf<Video?>(null) }
     var metaFor by remember { mutableStateOf<Video?>(null) }
     Scaffold(containerColor = Bg, contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = {
-        TopAppBar(
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    KLogo(34.dp)
-                    Text("Kadraj", fontWeight = FontWeight.Black, fontSize = 26.sp, modifier = Modifier.padding(start = 10.dp))
-                }
-            },
-            actions = {
-                IconButton(onClick = { ctx.startActivity(Intent(ctx, ShortsActivity::class.java)) }) { Icon(Icons.Filled.Slideshow, "Kısa videolar") }
-                IconButton(onClick = { go(Route.Search) }) { Icon(Icons.Filled.Search, "Ara") }
-                IconButton(onClick = { Prefs.amoled = !Prefs.amoled; ThemeState.amoled = Prefs.amoled }) { Icon(Icons.Filled.Contrast, "Tam siyah tema") }
-                SortButton { ver++ }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
-        )
+        BigHeader("Videolar") {
+            IconButton(onClick = { ctx.startActivity(Intent(ctx, ShortsActivity::class.java)) }) { Icon(Icons.Filled.Slideshow, "Kısa videolar") }
+            IconButton(onClick = { go(Route.Search) }) { Icon(Icons.Filled.Search, "Ara") }
+            SortButton { ver++ }
+        }
     }) { pad ->
         val folders = remember(vm.videos, ver, vm.ver) { Library.sortFolders(Library.folders(vm.videos)) }
         val recent = remember(vm.videos, vm.ver) { vm.videos.filter { Prefs.playedAt(it.key) > 0 }.sortedByDescending { Prefs.playedAt(it.key) }.take(12) }
@@ -222,12 +212,13 @@ fun HomeScreen(vm: LibVM, go: (Route) -> Unit) {
                 if (vm.loading) CircularProgressIndicator(Modifier.align(Alignment.Center), color = Accent)
                 else Empty(Icons.Filled.VideoLibrary, "Telefonda video bulunamadı.\nAğ sekmesindeki Wi-Fi aktarım ile bilgisayardan video gönderebilirsin.")
             } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+                item { StorageCard(vm, go) }
                 item { LowSpaceCard(vm, go) }
                 if (recent.isNotEmpty()) {
-                    item { SectionHeader("İzlemeye devam et") }
+                    item { SectionHeader("İzlemeye devam et", "Geçmiş") { go(Route.ListenHistR) } }
                     item {
                         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            items(recent, key = { it.key }) { v -> HeroCard(v) { openInFolder(ctx, vm, v) } }
+                            items(recent, key = { it.key }) { v -> ContinueCard(v) { openInFolder(ctx, vm, v) } }
                         }
                     }
                 }
@@ -267,19 +258,10 @@ fun HomeScreen(vm: LibVM, go: (Route) -> Unit) {
                     }
                 }
                 item { SectionHeader("Klasörler (${folders.size})") }
-                if (Prefs.grid) {
-                    items(folders.chunked(2)) { row ->
-                        Row(Modifier.padding(horizontal = 10.dp)) {
-                            row.forEach { f -> Box(Modifier.weight(1f)) { FolderCard(f, { go(Route.Videos(f.path)) }, { folderSel = f }) } }
-                            if (row.size == 1) Spacer(Modifier.weight(1f))
-                        }
-                    }
-                } else item {
-                    Column(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Surf)) {
-                        folders.forEachIndexed { i, f ->
-                            FolderRow(f, { go(Route.Videos(f.path)) }, { folderSel = f })
-                            if (i < folders.lastIndex) HorizontalDivider(Modifier.padding(start = 82.dp), color = Color.White.copy(alpha = 0.06f))
-                        }
+                items(folders.chunked(2)) { row ->
+                    Row(Modifier.padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        row.forEach { f -> Box(Modifier.weight(1f)) { FolderTile(f, { go(Route.Videos(f.path)) }, { folderSel = f }) } }
+                        if (row.size == 1) Spacer(Modifier.weight(1f))
                     }
                 }
             }
@@ -777,4 +759,55 @@ fun PlaylistScreen(vm: LibVM, id: Long, back: () -> Unit) {
     if (deleting) AlertDialog(onDismissRequest = { deleting = false }, title = { Text("Liste silinsin mi?") }, text = { Text("Dosyalar silinmez, sadece liste kaldırılır.") },
         confirmButton = { TextButton(onClick = { Playlists.delete(id); deleting = false; back() }) { Text("Sil", color = Color(0xFFFF6B6B)) } },
         dismissButton = { TextButton(onClick = { deleting = false }) { Text("Vazgeç") } })
+}
+
+
+// ---------------- yeni ana sayfa parçaları ----------------
+@Composable
+private fun StorageCard(vm: LibVM, go: (Route) -> Unit) {
+    val total = remember(vm.videos) { vm.videos.sumOf { it.size } }
+    val use = remember(vm.ver, vm.videos) { storageUse() }
+    Row(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Surf).padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(42.dp).clip(RoundedCornerShape(12.dp)).background(Accent.copy(alpha = 0.15f)), contentAlignment = Alignment.Center) {
+            Icon(Icons.Filled.VideoLibrary, null, tint = Accent)
+        }
+        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            Text("${vm.videos.size} video · ${fmtSize(total)}", fontWeight = FontWeight.Bold)
+            Box(Modifier.padding(vertical = 6.dp).fillMaxWidth().height(5.dp).clip(CircleShape).background(Surf2)) {
+                Box(Modifier.fillMaxWidth((use.first.toFloat() / use.second).coerceIn(0f, 1f)).fillMaxHeight().clip(CircleShape).background(Accent))
+            }
+            Text("Telefonda ${fmtSize(use.second - use.first)} boş", color = Muted, fontSize = 12.sp)
+        }
+        Text("Yer aç", color = Accent, fontWeight = FontWeight.Bold, modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { go(Route.CleanupR) }.padding(6.dp))
+    }
+}
+
+@Composable
+private fun ContinueCard(v: Video, onClick: () -> Unit) {
+    val p = Prefs.pos(v.key); val d = Prefs.dur(v.key).takeIf { it > 0 } ?: v.duration
+    Column(Modifier.width(230.dp).pressable(onClick = onClick)) {
+        Box(Modifier.fillMaxWidth().aspectRatio(16 / 9f)) {
+            Thumb(v.copy(duration = 0), Modifier.fillMaxSize(), showNew = false)
+            if (d > p) Text("${fmtTime(d - p)} kaldı", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 10.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xB3000000)).padding(horizontal = 6.dp, vertical = 2.dp))
+        }
+        Text(v.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
+        Text(File(v.folder).name, maxLines = 1, color = Muted, fontSize = 12.sp)
+    }
+}
+
+@Composable
+private fun FolderTile(f: Folder, onClick: () -> Unit, onLong: () -> Unit) {
+    val newCount = f.videos.count { it.isNew }
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Surf).combinedClickable(onClick = onClick, onLongClick = onLong).padding(10.dp)) {
+        Box {
+            Thumb(f.videos.maxBy { it.dateAdded }.copy(duration = 0), Modifier.fillMaxWidth().aspectRatio(16 / 10f), showNew = false)
+            if (newCount > 0) Text("$newCount YENİ", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Black,
+                modifier = Modifier.align(Alignment.TopStart).padding(6.dp).clip(CircleShape).background(Accent).padding(horizontal = 7.dp, vertical = 2.dp))
+            if (f.pinned) Icon(Icons.Filled.PushPin, null, tint = Color.White, modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(16.dp))
+        }
+        Text(f.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+        Text("${f.videos.size} video · ${fmtSize(f.size)}", maxLines = 1, color = Muted, fontSize = 12.sp)
+    }
 }

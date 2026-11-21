@@ -91,6 +91,7 @@ sealed interface Route {
     data object CleanupR : Route
     data object ReportR : Route
     data object ListenHistR : Route
+    data object SummaryR : Route
     data object SmbList : Route
     data class SmbBrowse(val server: SmbServer, val path: String) : Route
     data object Transfer : Route
@@ -106,6 +107,7 @@ sealed interface Route {
 object AppState {
     var showNow by mutableStateOf(false)
     var playFile by mutableStateOf<String?>(null)
+    var shortcut by mutableStateOf<String?>(null)
     var tab by mutableIntStateOf(0)
     var update by mutableStateOf<Updater.Rel?>(null)
     var sharedUrl by mutableStateOf<String?>(null)
@@ -171,6 +173,7 @@ class MainActivity : AppCompatActivity() {
         i.getIntExtra("tab", -1).takeIf { it in 0..4 }?.let { AppState.tab = it; AppState.showNow = false }
         if (i.getBooleanExtra("fromClipTile", false)) AppState.forceClip = true
         i.getStringExtra("playFile")?.let { AppState.playFile = it }
+        i.getStringExtra("shortcut")?.let { if (it == "paste") AppState.forceClip = true else AppState.shortcut = it }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -232,6 +235,11 @@ fun MainApp() {
     }
     LaunchedEffect(Dl.doneTick) { if (Dl.doneTick > 0) { delay(1200); vm.reload() } }
     val pfCtx = LocalContext.current
+    LaunchedEffect(AppState.shortcut, vm.videos.size, vm.songs.size) {
+        val sc = AppState.shortcut ?: return@LaunchedEffect
+        if (vm.videos.isEmpty() && vm.songs.isEmpty()) return@LaunchedEffect
+        AppState.shortcut = null; Shortcuts.run(pfCtx, sc, vm)
+    }
     LaunchedEffect(AppState.playFile) { AppState.playFile?.let { f -> AppState.playFile = null; playFile(pfCtx, f) } }
     LaunchedEffect(MediaWatch.tick) { if (MediaWatch.tick > 0) { delay(2500); vm.reload(announce = true) } }
     Surface(color = Bg, modifier = Modifier.fillMaxSize()) {
@@ -319,6 +327,7 @@ private fun Shell(vm: LibVM) {
                 Route.CleanupR -> CleanupScreen(vm, back)
                 Route.ReportR -> ReportScreen(back)
                 Route.ListenHistR -> ListenHistoryScreen(back)
+                Route.SummaryR -> SummaryScreen(vm, back)
                 Route.SmbList -> SmbListScreen(go, back)
                 is Route.SmbBrowse -> SmbBrowseScreen(r.server, r.path, go, back)
                 Route.Transfer -> TransferScreen(back)

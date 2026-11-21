@@ -3,6 +3,7 @@
 
 package com.perde.oynatici
 
+import androidx.compose.ui.platform.LocalContext
 import android.graphics.Typeface
 import android.view.ContextThemeWrapper
 import android.view.View
@@ -608,8 +609,9 @@ private fun PlayerSheet(a: PlayerActivity, s: Sheet) {
                 Sheet.CLIP -> ClipSheet(a)
                 Sheet.CHAPTERS -> ChaptersSheet(a)
                 Sheet.BOOKMARKS -> BookmarksSheet(a)
+                Sheet.INTRO -> IntroSheet(a)
                 Sheet.ONLINE -> OnlineSubsSheet(a)
-                Sheet.DOWNLOAD -> DlOptionsContent(false, 1) { o, at ->
+                Sheet.DOWNLOAD -> DlOptionsContent(false, 1, a.curKey()) { o, at ->
                     a.curKey()?.let { k -> Dl.addSingles(a, listOf(Triple(k, ui.title, Web.cached(k)?.thumb)), o, at) }
                     ui.sheet = null; a.toast("İndirme başladı — İndir sekmesinden takip edebilirsin")
                 }
@@ -752,6 +754,16 @@ private fun SpeedSheet(a: PlayerActivity) {
             FilterChip(selected = ui.speed == v, onClick = { a.setSpeed(v) }, label = { Text(fmtSpeed(v)) })
         }
     }
+    a.folderOf(ui.key)?.let { f ->
+        var on by remember(ui.key) { mutableStateOf(a.folderSpeedOn()) }
+        Row(Modifier.fillMaxWidth().padding(top = 14.dp).clip(RoundedCornerShape(14.dp)).background(Surf2).clickable { on = !on; a.setFolderSpeed(on) }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("\"${java.io.File(f).name}\" klasöründe hep bu hız", fontWeight = FontWeight.SemiBold)
+                Text("Bu klasörden açılan her video ${fmtSpeed(ui.speed)} başlar", color = Muted, fontSize = 12.sp)
+            }
+            Switch(on, { on = it; a.setFolderSpeed(it) })
+        }
+    }
     Text("İpucu: Ekrana basılı tutarak geçici olarak 2× hızda izleyebilirsin.", fontSize = 13.sp, color = Muted, modifier = Modifier.padding(top = 12.dp))
 }
 
@@ -765,7 +777,8 @@ private fun MoreSheet(a: PlayerActivity) {
         Tile(Icons.Filled.PhotoCamera, "Ekran görüntüsü") { ui.sheet = null; a.screenshot() }
         Tile(Icons.Filled.ContentCut, "Kes / GIF yap") { ui.sheet = Sheet.CLIP }
         Tile(Icons.Filled.Toc, "Bölümler ve sahneler", ui.chapters.isNotEmpty()) { ui.sheet = Sheet.CHAPTERS }
-        Tile(Icons.Filled.Bookmarks, "Yer imleri") { ui.sheet = Sheet.BOOKMARKS }
+        Tile(Icons.Filled.EditNote, "Notlar ve yer imleri") { ui.sheet = Sheet.BOOKMARKS }
+        if (a.folderOf(ui.key) != null) Tile(Icons.Filled.FastForward, "Girişi atla (klasör)", a.introOf(ui.key) != null) { ui.sheet = Sheet.INTRO }
         Tile(Icons.Filled.Loop, when { ui.abA < 0 -> "A-B tekrar"; ui.abB < 0 -> "B noktasını işaretle"; else -> "A-B'yi kapat" }, ui.abA >= 0) { a.abStep() }
         Tile(Icons.Filled.Bedtime, if (ui.sleepLabel.isEmpty()) "Uyku zamanlayıcısı" else "Uyku: ${ui.sleepLabel}", ui.sleepLabel.isNotEmpty()) { ui.sheet = Sheet.SLEEP }
         Tile(Icons.Filled.NightsStay, "Gece modu", ui.night) { a.toggleNight() }
@@ -856,10 +869,22 @@ private fun ChaptersSheet(a: PlayerActivity) {
 @Composable
 private fun BookmarksSheet(a: PlayerActivity) {
     val ui = a.ui
-    SheetTitle("Yer imleri")
-    Button(onClick = { a.addBookmark() }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Filled.BookmarkAdd, null); Spacer(Modifier.width(8.dp)); Text("Şu anki anı işaretle (${fmtTime(ui.pos)})") }
+    val ctx = LocalContext.current
+    val at = remember { ui.pos }
+    var note by remember { mutableStateOf("") }
     val list = remember(ui.bmVer, ui.key) { Bookmarks.get(ui.key) }
-    if (list.isEmpty()) Text("Henüz yer imi yok. Alt çubuktaki yer imi düğmesiyle de ekleyebilirsin.", color = Muted, modifier = Modifier.padding(top = 12.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.weight(1f)) { SheetTitle("Notlarım") }
+        if (list.isNotEmpty()) TextButton(onClick = {
+            val txt = ui.title + "\n" + list.joinToString("\n") { "${fmtTime(it.t)} — ${it.label}" }
+            ctx.startActivity(android.content.Intent.createChooser(android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain").putExtra(android.content.Intent.EXTRA_TEXT, txt), "Notları paylaş"))
+        }) { Icon(Icons.Filled.Share, null); Text(" Paylaş") }
+    }
+    OutlinedTextField(note, { note = it }, Modifier.fillMaxWidth(), label = { Text("${fmtTime(at)} anına not yaz") }, placeholder = { Text("Örn. Sınavda çıkar: verim formülü") }, singleLine = false, maxLines = 3)
+    Button(onClick = { a.addNote(at, note); note = ""; a.toast("Not eklendi: ${fmtTime(at)}") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Icon(Icons.Filled.EditNote, null); Spacer(Modifier.width(8.dp)); Text(if (note.isBlank()) "Bu anı işaretle (${fmtTime(at)})" else "Notu ekle (${fmtTime(at)})")
+    }
+    if (list.isEmpty()) Text("Henüz not yok. Videonun önemli anlarına not yaz; dokununca o ana gider, ilerleme çubuğunda sarı işaret olarak görünür.", color = Muted, modifier = Modifier.padding(top = 12.dp))
     list.forEach { b ->
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { a.seekTo(b.t); ui.sheet = null }.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.Bookmark, null, tint = Color(0xFFFFE14D))
@@ -934,5 +959,31 @@ private fun InfoSheet(a: PlayerActivity) {
             Text(k, color = Muted, modifier = Modifier.width(120.dp), fontSize = 14.sp)
             Text(v, fontSize = 14.sp)
         }
+    }
+}
+
+
+@Composable
+private fun IntroSheet(a: PlayerActivity) {
+    val ui = a.ui
+    val saved = remember { a.introOf(ui.key) }
+    var s by remember { mutableLongStateOf(saved?.first ?: 0L) }
+    var e by remember { mutableLongStateOf(saved?.second ?: 0L) }
+    SheetTitle("Girişi atla")
+    Text("\"${a.folderOf(ui.key)?.let { java.io.File(it).name } ?: ""}\" klasöründeki bütün videolarda bu aralık kendiliğinden atlanır. Videoyu girişin bittiği ana getirip \"Bitiş: şimdi\" de.",
+        color = Muted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 12.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).background(Surf2).padding(12.dp)) {
+            Text("Başlangıç", color = Muted, fontSize = 12.sp); Text(fmtTime(s), fontSize = 24.sp, fontWeight = FontWeight.Black)
+            Row { TextButton(onClick = { s = ui.pos }) { Text("Şimdi") }; TextButton(onClick = { s = 0 }) { Text("0:00") } }
+        }
+        Column(Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).background(Surf2).padding(12.dp)) {
+            Text("Bitiş", color = Muted, fontSize = 12.sp); Text(if (e > 0) fmtTime(e) else "—", fontSize = 24.sp, fontWeight = FontWeight.Black)
+            TextButton(onClick = { e = ui.pos }) { Text("Bitiş: şimdi") }
+        }
+    }
+    Row(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Button(onClick = { a.saveIntro(s, e); ui.sheet = null; a.toast("Giriş ${fmtTime(s)}–${fmtTime(e)} bu klasörde atlanacak") }, enabled = e > s, modifier = Modifier.weight(1f)) { Text("Kaydet") }
+        if (saved != null) OutlinedButton(onClick = { a.saveIntro(0, 0); ui.sheet = null; a.toast("Giriş atlama kapatıldı") }, modifier = Modifier.weight(1f)) { Text("Kaldır") }
     }
 }

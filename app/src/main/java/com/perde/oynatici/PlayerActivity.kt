@@ -82,7 +82,7 @@ import java.io.File
 import java.util.Locale
 import com.google.android.gms.cast.MediaMetadata as CastMeta
 
-enum class Sheet { SUBS, AUDIO, SPEED, MORE, SLEEP, EQ, INFO, CLIP, CHAPTERS, BOOKMARKS, ONLINE, PLAYLIST, DOWNLOAD, META }
+enum class Sheet { SUBS, AUDIO, SPEED, MORE, SLEEP, EQ, INFO, CLIP, CHAPTERS, BOOKMARKS, ONLINE, PLAYLIST, DOWNLOAD, META, INTRO }
 
 data class Ind(val kind: String, val text: String, val level: Float? = null)
 
@@ -288,6 +288,7 @@ class PlayerActivity : AppCompatActivity() {
                     ui.pos = player.currentPosition.coerceAtLeast(0)
                     val d = player.duration
                     ui.dur = if (d == C.TIME_UNSET) 0 else d
+                    introCheck()
                 } else castSession?.remoteMediaClient?.let { c ->
                     ui.pos = c.approximateStreamPosition; ui.dur = c.streamDuration; ui.castPlaying = c.isPlaying
                 }
@@ -482,6 +483,8 @@ class PlayerActivity : AppCompatActivity() {
         // bu video için en son kullanılan parlaklık ve ses
         Levels.bright(k)?.let { b -> window.attributes = window.attributes.apply { screenBrightness = b.coerceIn(0.01f, 1f) } }
         Levels.vol(k)?.let { v -> setVolume(v) }
+        introDone = false
+        folderOf(k)?.let { f -> if (Prefs.sp.contains("fsp:$f")) { val s = Prefs.sp.getFloat("fsp:$f", 1f); if (s != ui.speed) { player.setPlaybackSpeed(s); ui.speed = s } } }
         if (Prefs.rememberView) {
             val sp = Prefs.sp
             if (sp.contains("as:$k")) ui.aspect = sp.getInt("as:$k", 0).coerceIn(0, ASPECTS.size - 1)
@@ -592,7 +595,42 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun updateNav() { ui.hasNext = player.hasNextMediaItem(); ui.hasPrev = player.hasPreviousMediaItem() }
 
-    fun setSpeed(s: Float) { val v = (Math.round(s * 100) / 100f).coerceIn(0.25f, 4f); player.setPlaybackSpeed(v); ui.speed = v }
+    fun setSpeed(s: Float) {
+        val v = (Math.round(s * 100) / 100f).coerceIn(0.25f, 4f); player.setPlaybackSpeed(v); ui.speed = v
+        folderOf(curKey())?.let { f -> if (Prefs.sp.contains("fsp:$f")) Prefs.sp.edit().putFloat("fsp:$f", v).apply() }
+    }
+
+    // ---- klasöre özel hız ----
+    fun folderOf(k: String?): String? = k?.takeIf { it.startsWith("/") }?.let { File(it).parent }
+    fun folderSpeedOn() = folderOf(curKey())?.let { Prefs.sp.contains("fsp:$it") } == true
+    fun setFolderSpeed(on: Boolean) {
+        val f = folderOf(curKey()) ?: return
+        Prefs.sp.edit().apply { if (on) putFloat("fsp:$f", ui.speed) else remove("fsp:$f") }.apply()
+        toast(if (on) "${File(f).name}: hep ${fmtSpeed(ui.speed)}" else "Klasör hızı kapatıldı")
+    }
+
+    // ---- klasör için giriş atlama ----
+    private var introDone = false
+    fun introOf(k: String?): Pair<Long, Long>? = folderOf(k)?.let { Prefs.sp.getString("intro:$it", null) }?.split(',')
+        ?.mapNotNull { it.toLongOrNull() }?.takeIf { it.size == 2 && it[1] > it[0] }?.let { it[0] to it[1] }
+    fun saveIntro(s: Long, e: Long) {
+        val f = folderOf(curKey()) ?: return
+        Prefs.sp.edit().apply { if (e > s) putString("intro:$f", "$s,$e") else remove("intro:$f") }.apply()
+        introDone = true
+    }
+    private fun introCheck() {
+        if (introDone || ui.casting) return
+        val r = introOf(curKey()) ?: run { introDone = true; return }
+        val p = ui.pos
+        if (p >= r.second - 1000) { introDone = true; return }
+        if (p >= r.first && player.isPlaying) { introDone = true; player.seekTo(r.second); toast("Giriş atlandı") }
+    }
+
+    // ---- zamanlı not ----
+    fun addNote(t: Long, text: String) {
+        val k = curKey() ?: return
+        Bookmarks.add(k, Bookmark(t, text.trim().ifEmpty { "Yer imi · ${fmtTime(t)}" })); ui.bmVer++
+    }
 
     private fun saveView() { val k = curKey() ?: return; if (Prefs.rememberView) Prefs.sp.edit().putInt("as:$k", ui.aspect).putFloat("zm:$k", ui.zoom).putInt("or:$k", ui.orient).apply() }
     fun cycleAspect() { ui.aspect = (ui.aspect + 1) % ASPECTS.size; ui.zoom = 1f; ui.pan = Offset.Zero; toast(ASPECTS[ui.aspect]); saveView() }

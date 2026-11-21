@@ -176,6 +176,15 @@ object SongMatch {
         }
     }
 
+    /** Listede telefonda olmayanların id'leri. Şarkılar bir kez normalize edilir (her öğe için tekrar regex çalışmaz). */
+    fun missing(songs: List<Song>, entries: List<Web.Entry>): List<String> {
+        val idx = songs.mapNotNull { s -> norm(s.title).takeIf { it.length >= 3 }?.let { " $it " to artistNorm(s.artist).substringBefore(' ') } }.distinct()
+        return entries.filter { en ->
+            val e = " " + norm(en.title) + " " + norm(en.uploader) + " "
+            idx.none { (t, a) -> e.contains(t) && (a.isEmpty() || e.contains(" $a")) }
+        }.map { it.id }
+    }
+
     /** Aynı şarkının birden çok dosyası: aynı ad, aynı/boş sanatçı, süre farkı < 4 sn. */
     fun duplicates(songs: List<Song>): List<List<Song>> {
         val out = ArrayList<List<Song>>()

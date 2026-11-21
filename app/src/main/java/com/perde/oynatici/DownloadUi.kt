@@ -157,7 +157,16 @@ fun DownloadScreen(go: (Route) -> Unit) {
                                 onList = a.playlistUrl?.let { pl -> { openList(pl) } })
                         }
                         is Web.Analysis.Multi -> {
-                            item { MultiHeader(a, selected, follow, { follow = it }, { n -> selected.clear(); selected.addAll(if (n < 0) a.entries.filter { !SongMatch.have(Music.cache, it.title, it.uploader) }.map { it.id } else a.entries.take(n).map { it.id }); if (n < 0) toast(ctx, "${a.entries.size - selected.size} şarkı zaten telefonda, ${selected.size} tanesi seçildi") }) { audio ->
+                            item { MultiHeader(a, selected, follow, { follow = it }, { n -> if (n >= 0) { selected.clear(); selected.addAll(a.entries.take(n).map { it.id }) } else {
+                                toast(ctx, "Telefondaki şarkılarla karşılaştırılıyor…")
+                                Thread {
+                                    val ids = SongMatch.missing(Music.cache, a.entries)
+                                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                        selected.clear(); selected.addAll(ids)
+                                        toast(ctx, "${a.entries.size - ids.size} şarkı zaten telefonda, ${ids.size} tanesi seçildi")
+                                    }
+                                }.start()
+                            } }) { audio ->
                                 val es = a.entries.filter { it.id in selected }
                                 if (es.isNotEmpty()) ask(DlReq.ListReq(a.title, es, follow, a.url, a.entries.map { it.id }), audio)
                             } }
@@ -435,10 +444,10 @@ private fun JobRow(j: Job, compact: Boolean = false) {
             Text(sub, color = when (j.state) { Job.ERR -> BAD; Job.DONE, Job.SKIP -> OK; else -> Muted }, fontSize = 12.sp, maxLines = 2)
             if (j.state == Job.RUN || j.state == Job.PAUSED || j.state == Job.Q) LinearProgressIndicator(progress = { j.progress }, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).height(6.dp).clip(CircleShape), color = Accent, trackColor = Surf2, drawStopIndicator = {})
             if (j.state == Job.RUN) Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("%${(j.progress * 100).toInt()}", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                if (j.totalBytes > 0) Text(" · ${mbOf(j.gotBytes)} / ${if (j.totalExact) "" else "≈"}${mbOf(j.totalBytes)} MB", color = Muted, fontSize = 12.sp)
-                Spacer(Modifier.weight(1f))
-                Text(listOf(j.speed, j.eta.removeSuffix(" kaldı")).filter { it.isNotEmpty() }.joinToString(" · "), color = Muted, fontSize = 12.sp)
+                Text("%${(j.progress * 100).toInt()}", fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, softWrap = false)
+                Text(if (j.totalBytes > 0) " · ${mbOf(j.gotBytes)}/${if (j.totalExact) "" else "≈"}${mbOf(j.totalBytes)} MB" else "", color = Muted, fontSize = 12.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Text(listOf(j.speed, j.eta.removeSuffix(" kaldı")).filter { it.isNotEmpty() }.joinToString(" · "), color = Muted, fontSize = 12.sp, maxLines = 1, softWrap = false)
             }
         }
         when (j.state) {

@@ -98,6 +98,7 @@ class Job(
     var expectFiles = 1
     @Volatile var bps = 0L
     var durSec = 0
+    @Volatile var exactSeen = false   // diskteki gerçek ölçüm başladı mı
     @Volatile var expected = 0L      // yt-dlp'nin indirme öncesi bildirdiği toplam bayt
     var curMax = 0L
     var curSize = 0L
@@ -318,7 +319,7 @@ object Dl {
             for (j in jobs.reversed()) {
                 if (running >= DlPrefs.parallel.coerceIn(1, 6)) break
                 if (j.state != Job.Q) continue
-                j.state = Job.RUN; j.phase = "Bağlanıyor…"; j.progress = 0f; j.fileIdx = 0; j.lastRaw = 0f; j.pauseReq = false
+                j.state = Job.RUN; j.phase = "Bağlanıyor…"; j.progress = 0f; j.exactSeen = false; j.fileIdx = 0; j.lastRaw = 0f; j.pauseReq = false
                 running++
                 pool.execute { run(c, j); main.post { finished(c, j) } }
             }
@@ -419,7 +420,8 @@ object Dl {
             val rest = if (!last) (if (j.durSec > 0) j.durSec * 16_000L else (maxOf(j.curSize, j.curMax) * 0.12f).toLong()) else 0L
             val total = j.doneBytes + maxOf(j.curSize, j.curMax) + rest
             j.gotBytes = j.doneBytes + j.curMax; j.totalBytes = total; j.totalExact = false
-            val mapped = ((if (total > 0) j.gotBytes.toFloat() / total else raw / 100f) * 0.97f).coerceAtMost(0.97f)
+            // tahmin: hem bayt oranı hem yt-dlp yüzdesi; küçük olanı al (gerçek ölçüm gelince ona geçilir)
+            val mapped = (minOf(if (total > 0) j.gotBytes.toFloat() / total else 1f, raw / 100f) * 0.97f).coerceAtMost(0.97f)
             if (mapped > j.progress) j.progress = mapped                     // asla geri gitmez
         }
         if (j.expected <= 0 || j.progress < 0.96f) j.phase = when {
@@ -458,7 +460,8 @@ object Dl {
                     if (now > lastT && got >= lastGot) { val inst = (got - lastGot) * 1000 / (now - lastT); j.bps = if (j.bps == 0L) inst else (j.bps * 6 + inst * 4) / 10 }
                     lastGot = got; lastT = now
                     val f = (got.toFloat() / e * 0.97f).coerceAtMost(0.97f)
-                    if (f > j.progress) j.progress = f                            // asla geri gitmez
+                    if (!j.exactSeen) { j.exactSeen = true; j.progress = f }      // tahminden gerçek ölçüme geç
+                    else if (f > j.progress) j.progress = f                       // sonra asla geri gitmez
                     if (got >= e * 0.985) {
                         if (j.tDlEnd == 0L) j.tDlEnd = System.currentTimeMillis()
                         j.phase = if (j.opts.audio) "Dönüştürülüyor…" else if (j.expectFiles > 1) "Birleştiriliyor…" else "Kaydediliyor…"

@@ -355,10 +355,13 @@ private fun CountdownCard(a: PlayerActivity, n: Int, m: Modifier) {
 
 @Composable
 private fun BusyCard(t: String, p: Float, m: Modifier) = Card(m) {
-    Text(t, color = Color.White, fontWeight = FontWeight.Bold)
+    Text(t, color = Color.White, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
     Spacer(Modifier.height(12.dp))
-    LinearProgressIndicator(progress = { p.coerceIn(0f, 1f) }, modifier = Modifier.width(220.dp).height(6.dp).clip(CircleShape), color = Accent, trackColor = Color(0x33FFFFFF))
-    Text("%${(p * 100).toInt()}", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+    if (p < 0f) LinearProgressIndicator(modifier = Modifier.width(220.dp).height(6.dp).clip(CircleShape), color = Accent, trackColor = Color(0x33FFFFFF))
+    else {
+        LinearProgressIndicator(progress = { p.coerceIn(0f, 1f) }, modifier = Modifier.width(220.dp).height(6.dp).clip(CircleShape), color = Accent, trackColor = Color(0x33FFFFFF))
+        Text("%${(p * 100).toInt()}", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+    }
 }
 
 @Composable
@@ -463,6 +466,7 @@ private fun Controls(a: PlayerActivity) {
             }
             if (!ui.casting) {
                 GlassButton(if (ui.fav) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, "Favori", 40.dp, 20.dp, active = ui.fav) { a.toggleFav() }
+                if (a.isWeb) GlassButton(Icons.Filled.Download, "İndir", 40.dp, 20.dp, active = true) { ui.sheet = Sheet.DOWNLOAD }
                 GlassButton(Icons.Filled.ClosedCaption, "Altyazı", 40.dp, 20.dp) { ui.sheet = Sheet.SUBS }
                 GlassButton(Icons.Filled.Audiotrack, "Ses", 40.dp, 20.dp) { ui.sheet = Sheet.AUDIO }
                 PillText(fmtSpeed(ui.speed), ui.speed != 1f) { ui.sheet = Sheet.SPEED }
@@ -603,6 +607,10 @@ private fun PlayerSheet(a: PlayerActivity, s: Sheet) {
                 Sheet.CHAPTERS -> ChaptersSheet(a)
                 Sheet.BOOKMARKS -> BookmarksSheet(a)
                 Sheet.ONLINE -> OnlineSubsSheet(a)
+                Sheet.DOWNLOAD -> DownloadQualityContent { q ->
+                    a.curKey()?.let { k -> Downloads.start(a, k, ui.title, Web.cached(k)?.thumb, q) }
+                    ui.sheet = null; a.toast("İndirme başladı — Ağ > Ağ akışı ekranından takip edebilirsin")
+                }
                 Sheet.PLAYLIST -> PlaylistPickerContent(listOfNotNull(a.curKey())) { msg -> ui.sheet = null; a.toast(msg) }
             }
         }
@@ -750,6 +758,7 @@ private fun MoreSheet(a: PlayerActivity) {
     var decSw by remember { mutableStateOf(Prefs.decoderSw) }
     SheetTitle("Araçlar")
     FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (a.isWeb) Tile(Icons.Filled.Download, "İndir", true) { ui.sheet = Sheet.DOWNLOAD }
         Tile(Icons.Filled.PhotoCamera, "Ekran görüntüsü") { ui.sheet = null; a.screenshot() }
         Tile(Icons.Filled.ContentCut, "Kes / GIF yap") { ui.sheet = Sheet.CLIP }
         Tile(Icons.Filled.Toc, "Bölümler ve sahneler", ui.chapters.isNotEmpty()) { ui.sheet = Sheet.CHAPTERS }
@@ -769,6 +778,19 @@ private fun MoreSheet(a: PlayerActivity) {
         Tile(Icons.Filled.Info, "Video bilgisi") { ui.sheet = Sheet.INFO }
         Tile(Icons.Filled.Memory, if (decSw) "Çözücü: yazılım" else "Çözücü: donanım", decSw) {
             decSw = !decSw; Prefs.decoderSw = decSw; a.toast("Çözücü ayarı oynatıcı yeniden açılınca geçerli olur")
+        }
+    }
+}
+
+@Composable
+fun DownloadQualityContent(pick: (Int) -> Unit) {
+    SheetTitle("İndir")
+    Text("Videolar Filmler/Perde, sesler Müzik/Perde klasörüne kaydedilir.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp))
+    Downloads.QUALITIES.forEachIndexed { i, q ->
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable { pick(i) }.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(if (i == 3) Icons.Filled.MusicNote else Icons.Filled.Movie, null, tint = Accent)
+            Text(q, Modifier.padding(start = 14.dp).weight(1f), fontWeight = FontWeight.Medium)
+            Icon(Icons.Filled.Download, null, tint = Muted)
         }
     }
 }

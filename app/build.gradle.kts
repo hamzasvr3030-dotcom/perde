@@ -11,8 +11,9 @@ android {
         applicationId = "com.perde.oynatici"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
+        ndk { abiFilters += listOf("arm64-v8a") }
     }
 
     buildTypes {
@@ -36,6 +37,7 @@ android {
     }
 
     packaging {
+        jniLibs { useLegacyPackaging = true }
         resources {
             excludes += setOf(
                 "META-INF/*.md", "META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*",
@@ -70,6 +72,8 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-video:3.2.0")
 
     implementation("org.nanohttpd:nanohttpd:2.3.1")
+    implementation("io.github.junkfood02.youtubedl-android:library:0.18.1")
+    implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1")
     implementation("com.hierynomus:smbj:0.14.0")
 
     implementation("androidx.mediarouter:mediarouter:1.8.1")

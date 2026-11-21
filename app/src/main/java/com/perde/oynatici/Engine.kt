@@ -295,7 +295,14 @@ class AnyDataSource(private val ctx: Context) : DataSource {
 
     override fun open(dataSpec: DataSpec): Long {
         val ds: DataSource = if (dataSpec.uri.scheme.equals("smb", true)) SmbDataSource()
-        else DefaultDataSource.Factory(ctx, DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true).setUserAgent("Perde/1.0")).createDataSource()
+        else {
+            val hdr = dataSpec.uri.host?.let { Web.headers[it] } ?: emptyMap()
+            val ua = hdr.entries.firstOrNull { it.key.equals("User-Agent", true) }?.value ?: "Mozilla/5.0 (Linux; Android) Perde/1.2"
+            val http = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true).setUserAgent(ua)
+                .setConnectTimeoutMs(15_000).setReadTimeoutMs(20_000)
+                .setDefaultRequestProperties(hdr.filterKeys { !it.equals("User-Agent", true) })
+            DefaultDataSource.Factory(ctx, http).createDataSource()
+        }
         listeners.forEach { ds.addTransferListener(it) }
         cur = ds
         return ds.open(dataSpec)

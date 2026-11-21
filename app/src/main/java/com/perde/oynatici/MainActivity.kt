@@ -92,6 +92,8 @@ object AppState {
     var showNow by mutableStateOf(false)
     var tab by mutableIntStateOf(0)
     var update by mutableStateOf<Updater.Rel?>(null)
+    var sharedUrl by mutableStateOf<String?>(null)
+    var openNet by mutableIntStateOf(0)
     var splashDone = false
 }
 
@@ -127,7 +129,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        if (intent.getBooleanExtra("openNow", false)) AppState.showNow = true
+        handleExtras(intent)
         setContent { PerdeTheme { MainApp() } }
         controller = MediaController.Builder(this, SessionToken(this, ComponentName(this, PlaybackService::class.java))).buildAsync()
         Thread { try { Trash.purge(this) } catch (_: Exception) { } }.start()
@@ -135,7 +137,13 @@ class MainActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        if (intent.getBooleanExtra("openNow", false)) AppState.showNow = true
+        handleExtras(intent)
+    }
+
+    private fun handleExtras(i: Intent) {
+        if (i.getBooleanExtra("openNow", false)) AppState.showNow = true
+        if (i.action == Intent.ACTION_SEND) Web.extractUrl(i.getStringExtra(Intent.EXTRA_TEXT))?.let { AppState.sharedUrl = it; AppState.openNet++ }
+        if (i.getBooleanExtra("openDownloads", false)) AppState.openNet++
     }
 
     override fun onDestroy() {
@@ -159,6 +167,7 @@ fun MainApp() {
     LaunchedEffect(Unit) {
         if (Build.VERSION.SDK_INT >= 33 && ctx.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
             notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        launch(Dispatchers.IO) { try { Web.init(ctx); Web.maybeUpdate(ctx) } catch (_: Throwable) { } }
         if (System.currentTimeMillis() - Prefs.lastUpdateCheck > 12 * 3600_000L) {
             Prefs.lastUpdateCheck = System.currentTimeMillis()
             Updater.check()?.let { r -> if (Updater.newer(r.version, Updater.current(ctx)) && r.version != Prefs.skipVersion) AppState.update = r }
@@ -182,6 +191,12 @@ private fun Shell(vm: LibVM) {
     val stack = stacks[tab]
     val go: (Route) -> Unit = { stack.add(it) }
     val back: () -> Unit = { if (stack.size > 1) stack.removeAt(stack.lastIndex) }
+    LaunchedEffect(AppState.openNet) {
+        if (AppState.openNet > 0) {
+            AppState.showNow = false; AppState.tab = 2
+            val s = stacks[2]; while (s.size > 1) s.removeAt(s.lastIndex); s.add(Route.Network)
+        }
+    }
     BackHandler(AppState.showNow || stack.size > 1 || tab != 0) {
         when {
             AppState.showNow -> AppState.showNow = false

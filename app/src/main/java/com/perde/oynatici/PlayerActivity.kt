@@ -58,6 +58,8 @@ import androidx.media3.common.VideoSize
 import androidx.media3.common.text.CueGroup
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import androidx.media3.ui.PlayerView
@@ -80,7 +82,7 @@ import java.io.File
 import java.util.Locale
 import com.google.android.gms.cast.MediaMetadata as CastMeta
 
-enum class Sheet { SUBS, AUDIO, SPEED, MORE, SLEEP, EQ, INFO, CLIP, CHAPTERS, BOOKMARKS, ONLINE, PLAYLIST }
+enum class Sheet { SUBS, AUDIO, SPEED, MORE, SLEEP, EQ, INFO, CLIP, CHAPTERS, BOOKMARKS, ONLINE, PLAYLIST, DOWNLOAD }
 
 data class Ind(val kind: String, val text: String, val level: Float? = null)
 
@@ -182,6 +184,7 @@ class PlayerActivity : AppCompatActivity() {
     val serial = Dispatchers.IO.limitedParallelism(1)
     private var mmr: MediaMetadataRetriever? = null
     private var mmrKey: String? = null
+    private var webRetried = false
 
     val pickSub = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -218,7 +221,11 @@ class PlayerActivity : AppCompatActivity() {
         }
         override fun onTracksChanged(tracks: Tracks) { ui.tracksVer++ }
         override fun onCues(cueGroup: CueGroup) { subtitleView?.setCues(cueGroup.cues) }
-        override fun onPlayerError(error: PlaybackException) { ui.error = describe(error); ui.showControls = true }
+        override fun onPlayerError(error: PlaybackException) {
+            val k = curKey()
+            if (k != null && Web.isPage(k) && !webRetried) { webRetried = true; loadWeb(k, fallback = true); return }
+            ui.error = describe(error); ui.showControls = true
+        }
         override fun onPlaybackStateChanged(playbackState: Int) {
             ui.buffering = playbackState == Player.STATE_BUFFERING
             if (playbackState == Player.STATE_ENDED) { ui.showControls = true; ui.poke++ }
@@ -357,6 +364,12 @@ class PlayerActivity : AppCompatActivity() {
         Engine.audioOnly = false
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, false).build()
         val titles = i.getStringArrayListExtra(EXTRA_TITLES)
+        if (keys.size == 1 && Web.isPage(first)) {
+            webRetried = false
+            ui.title = titles?.firstOrNull()?.takeIf { it != first } ?: Web.site(first)
+            loadWeb(first)
+            return true
+        }
         val idx = i.getIntExtra(EXTRA_INDEX, 0).coerceIn(0, keys.size - 1)
         val items = keys.mapIndexed { n, k ->
             val t = titles?.getOrNull(n) ?: nameOf(k)
@@ -376,6 +389,39 @@ class PlayerActivity : AppCompatActivity() {
         updateEndBehavior(); refreshSubState(); updateNav(); itemChanged()
         return true
     }
+
+    /** YouTube / sosyal medya sayfasını çözümleyip oynatır (görüntü + ses ayrıysa birleştirir). */
+    fun loadWeb(page: String, fallback: Boolean = false) {
+        ui.error = null; ui.busyProgress = -1f
+        ui.busy = if (fallback) "Farklı bir kalite deneniyor…" else "${Web.site(page)} videosu hazırlanıyor…"
+        player.stop()
+        lifecycleScope.launch {
+            try {
+                val s = Web.resolve(this@PlayerActivity, page, fallback)
+                ui.busy = null; ui.title = s.title
+                val meta = MediaMetadata.Builder().setTitle(s.title).setDisplayTitle(s.title).setArtist(s.uploader)
+                    .setArtworkUri(s.thumb?.let { Uri.parse(it) }).setMediaType(MediaMetadata.MEDIA_TYPE_VIDEO).build()
+                fun item(u: String, id: String) = MediaItem.Builder().setUri(u).setMediaId(id).setMediaMetadata(meta).apply {
+                    val l = u.substringBefore('?').lowercase(Locale.ROOT)
+                    if (l.endsWith(".m3u8") || "m3u8" in u) setMimeType(MimeTypes.APPLICATION_M3U8)
+                    else if (l.endsWith(".mpd")) setMimeType(MimeTypes.APPLICATION_MPD)
+                }.build()
+                val f = DefaultMediaSourceFactory(AnyDataSource.Factory(this@PlayerActivity))
+                val v = f.createMediaSource(item(s.videoUrl, page))
+                val src = if (s.audioUrl != null) MergingMediaSource(true, true, v, f.createMediaSource(item(s.audioUrl, page))) else v
+                val saved = savedPos(page)
+                val start = if (Prefs.resumeMode == 2) 0L else saved
+                player.setMediaSource(src, start)
+                player.prepare()
+                if (Prefs.resumeMode == 1 && saved > 0) { player.playWhenReady = false; ui.resumeAsk = saved } else player.playWhenReady = true
+                updateEndBehavior(); refreshSubState(); updateNav(); itemChanged()
+            } catch (e: Exception) {
+                ui.busy = null; ui.error = "Açılamadı: " + Web.explain(e); ui.showControls = true
+            }
+        }
+    }
+
+    val isWeb get() = curKey()?.let { Web.isPage(it) } == true
 
     private fun nameOf(k: String): String = when {
         k.startsWith("/") -> File(k).name
@@ -472,6 +518,7 @@ class PlayerActivity : AppCompatActivity() {
 
     fun reloadSub() {
         val k = curKey() ?: return
+        if (Web.isPage(k)) { toast("İnternet videolarına harici altyazı eklenemiyor"); return }
         val idx = player.currentMediaItemIndex
         val item = player.currentMediaItem ?: return
         val pos = player.currentPosition
@@ -883,7 +930,12 @@ class PlayerActivity : AppCompatActivity() {
     private fun startCast(s: CastSession) {
         castSession = s
         val k = curKey() ?: return
-        val url = if (k.startsWith("http")) k else { LocalServer.start(this); LocalServer.streamUrl(k) }
+        val url = when {
+            Web.isPage(k) -> Web.cached(k)?.takeIf { it.audioUrl == null }?.videoUrl
+                ?: run { toast("Bu internet videosu TV'ye yansıtılamıyor; önce indir"); return }
+            k.startsWith("http") -> k
+            else -> { LocalServer.start(this); LocalServer.streamUrl(k) }
+        }
         if (url == null) { toast("Wi-Fi adresi bulunamadı"); return }
         val name = ui.title.ifEmpty { nameOf(k) }
         val meta = CastMeta(CastMeta.MEDIA_TYPE_MOVIE).apply { putString(CastMeta.KEY_TITLE, name) }

@@ -85,32 +85,131 @@ fun NetScreen(go: (Route) -> Unit) {
 @Composable
 fun NetworkScreen(back: () -> Unit) {
     val ctx = LocalContext.current
-    var url by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+    var url by remember { mutableStateOf(AppState.sharedUrl ?: "") }
+    LaunchedEffect(AppState.sharedUrl) { AppState.sharedUrl?.let { url = it; AppState.sharedUrl = null } }
     var hist by remember { mutableStateOf(Prefs.netHistory.lines().filter { it.isNotBlank() }) }
+    var info by remember { mutableStateOf<Web.Stream?>(null) }
+    var loading by remember { mutableStateOf(false) }
+    var err by remember { mutableStateOf<String?>(null) }
+    var pickQuality by remember { mutableStateOf(false) }
+    val clip = androidx.compose.ui.platform.LocalClipboardManager.current
+
+    fun remember(u: String) { val h = (listOf(u) + hist.filter { it != u }).take(30); Prefs.netHistory = h.joinToString("\n"); hist = h }
     fun play(u: String) {
         val s = u.trim(); if (s.isEmpty()) return
-        val h = (listOf(s) + hist.filter { it != s }).take(30)
-        Prefs.netHistory = h.joinToString("\n"); hist = h
-        PlayerActivity.openKeys(ctx, listOf(s), listOf(Uri.parse(s).lastPathSegment ?: s), 0)
+        remember(s)
+        PlayerActivity.openKeys(ctx, listOf(s), listOf(info?.takeIf { it.page == s }?.title ?: Uri.parse(s).lastPathSegment ?: s), 0)
     }
-    Page("Ağ akışı", back) {
-        Column(Modifier.padding(16.dp)) {
-            OutlinedTextField(url, { url = it }, label = { Text("https://…") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), shape = RoundedCornerShape(16.dp))
-            Spacer(Modifier.height(10.dp))
-            Button(onClick = { play(url) }, enabled = url.isNotBlank(), modifier = Modifier.fillMaxWidth().height(50.dp)) { Icon(Icons.Filled.PlayArrow, null); Text("Oynat") }
-            if (hist.isNotEmpty()) {
-                Text("Geçmiş", color = Accent, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 20.dp, bottom = 6.dp))
-                LazyColumn {
-                    items(hist) { h ->
-                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { play(h) }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.History, null, tint = Muted)
-                            Text(h, Modifier.weight(1f).padding(horizontal = 12.dp), maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
-                            IconButton(onClick = { hist = hist - h; Prefs.netHistory = hist.joinToString("\n") }) { Icon(Icons.Filled.Close, "Sil") }
-                        }
+    // Sayfa bağlantısı yapıştırılınca otomatik incele
+    LaunchedEffect(url) {
+        val u = url.trim()
+        info = null; err = null
+        if (!Web.isPage(u)) { loading = false; return@LaunchedEffect }
+        delay(500)
+        loading = true
+        try { info = Web.resolve(ctx, u) } catch (e: Exception) { err = Web.explain(e) }
+        loading = false
+    }
+
+    Page("Ağ akışı ve indirme", back) {
+        LazyColumn(contentPadding = PaddingValues(16.dp)) {
+            item {
+                Text("YouTube, Instagram, TikTok, X, Facebook, Vimeo… bağlantısı ya da doğrudan video adresi yapıştır.", color = Muted, fontSize = 13.sp)
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(url, { url = it }, label = { Text("Bağlantı") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), shape = RoundedCornerShape(16.dp),
+                    trailingIcon = {
+                        if (url.isEmpty()) IconButton(onClick = { clip.getText()?.text?.let { t -> Web.extractUrl(t)?.let { url = it } ?: run { url = t } } }) { Icon(Icons.Filled.ContentPaste, "Yapıştır") }
+                        else IconButton(onClick = { url = "" }) { Icon(Icons.Filled.Close, "Temizle") }
+                    })
+                Spacer(Modifier.height(12.dp))
+                when {
+                    loading -> Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Surf).padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(28.dp), color = Accent, strokeWidth = 3.dp)
+                        Text("${Web.site(url.trim())} bağlantısı inceleniyor…", Modifier.padding(start = 14.dp))
+                    }
+                    err != null -> Text("⚠ $err", color = Color(0xFFFF8A80), modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Surf).padding(14.dp))
+                    info != null -> WebCard(info!!)
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(onClick = { play(url) }, enabled = url.isNotBlank() && Web.isHttp(url.trim()) && !loading, modifier = Modifier.weight(1f).height(52.dp)) {
+                        Icon(Icons.Filled.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Oynat")
+                    }
+                    FilledTonalButton(onClick = { pickQuality = true }, enabled = url.isNotBlank() && Web.isHttp(url.trim()) && !loading, modifier = Modifier.weight(1f).height(52.dp)) {
+                        Icon(Icons.Filled.Download, null); Spacer(Modifier.width(6.dp)); Text("İndir")
                     }
                 }
             }
+            if (Downloads.items.isNotEmpty()) {
+                item { Text("İndirmeler", color = Accent, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 22.dp, bottom = 6.dp)) }
+                items(Downloads.items, key = { it.id }) { d -> DownloadRow(d) }
+            }
+            if (hist.isNotEmpty()) {
+                item { Text("Geçmiş", color = Accent, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 22.dp, bottom = 6.dp)) }
+                items(hist, key = { "h$it" }) { h ->
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { url = h }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.History, null, tint = Muted)
+                        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                            Text(Web.site(h), fontSize = 12.sp, color = Accent)
+                            Text(h, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
+                        }
+                        IconButton(onClick = { hist = hist - h; Prefs.netHistory = hist.joinToString("\n") }) { Icon(Icons.Filled.Close, "Sil") }
+                    }
+                }
+            }
+            item {
+                Text("Not: Sadece izin verilen veya kendi içeriklerini indir; telif hakkı olan içerikleri paylaşma. Gizli hesaplar ve yaş sınırlı videolar giriş gerektirdiği için açılamayabilir.",
+                    color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 20.dp))
+            }
+        }
+    }
+    if (pickQuality) ModalBottomSheet(onDismissRequest = { pickQuality = false }, containerColor = Surf) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
+            DownloadQualityContent { q ->
+                val u = url.trim(); remember(u)
+                Downloads.start(ctx, u, info?.title ?: Web.site(u), info?.thumb, q)
+                pickQuality = false
+                toast(ctx, "İndirme başladı")
+            }
+        }
+    }
+}
+
+@Composable
+private fun WebCard(s: Web.Stream) {
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Surf).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.width(140.dp).aspectRatio(16 / 9f).clip(RoundedCornerShape(12.dp)).background(Surf2)) {
+            if (s.thumb != null) coil3.compose.AsyncImage(s.thumb, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+            if (s.durationSec > 0) Text(fmtTime(s.durationSec * 1000L), color = Color.White, fontSize = 11.sp,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp).clip(RoundedCornerShape(5.dp)).background(Color(0xB3000000)).padding(horizontal = 4.dp))
+        }
+        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            Text(Web.site(s.page), color = Accent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text(s.title, maxLines = 3, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+            listOfNotNull(s.uploader, if (s.height > 0) "${s.height}p" else null).joinToString(" · ").takeIf { it.isNotEmpty() }?.let { Text(it, color = Muted, fontSize = 12.sp) }
+        }
+    }
+}
+
+@Composable
+private fun DownloadRow(d: DL) {
+    val ctx = LocalContext.current
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp).clip(RoundedCornerShape(14.dp)).background(Surf)
+        .clickable(enabled = d.state == 2 && d.file != null) { d.file?.let { f -> playKeys(ctx, listOf(f)) } }.padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Icon(when (d.state) { 2 -> Icons.Filled.CheckCircle; 3 -> Icons.Filled.ErrorOutline; 4 -> Icons.Filled.Cancel; else -> Icons.Filled.Downloading },
+            null, tint = when (d.state) { 2 -> Color(0xFF3DDC97); 3 -> Color(0xFFFF6B6B); 4 -> Muted; else -> Accent })
+        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            Text(d.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
+            Text("${Downloads.QUALITIES[d.quality]} · ${d.info.ifEmpty { "Sırada" }}", color = if (d.state == 3) Color(0xFFFF8A80) else Muted, fontSize = 12.sp, maxLines = 2)
+            if (d.state <= 1) LinearProgressIndicator(progress = { d.progress }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp).clip(CircleShape), color = Accent, trackColor = Surf2)
+        }
+        when (d.state) {
+            0, 1 -> IconButton(onClick = { Downloads.cancel(d) }) { Icon(Icons.Filled.Close, "İptal") }
+            2 -> Icon(Icons.Filled.PlayArrow, "Oynat", tint = Accent)
+            else -> IconButton(onClick = { Downloads.items.remove(d) }) { Icon(Icons.Filled.Delete, "Kaldır", tint = Muted) }
         }
     }
 }
@@ -129,7 +228,7 @@ fun SmbListScreen(go: (Route) -> Unit, back: () -> Unit) {
                 ListItem(headlineContent = { Text(s.title) }, supportingContent = { Text("\\\\${s.host}\\${s.share}" + if (s.user.isNotBlank()) " · ${s.user}" else " · misafir") },
                     leadingContent = { Icon(Icons.Filled.Dns, null, tint = Accent) },
                     trailingContent = { IconButton(onClick = { edit = s }) { Icon(Icons.Filled.Edit, "Düzenle") } },
-                    modifier = Modifier.clickable { go(Route.SmbBrowse(s, "")) }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
+                    modifier = Modifier.clickable { go(Route.SmbBrowse(s, s.basePath)) }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
             }
         }
     }
@@ -146,6 +245,8 @@ private fun SmbDialog(init: SmbServer?, onDelete: (() -> Unit)?, dismiss: () -> 
     var user by remember { mutableStateOf(init?.user ?: "") }
     var pass by remember { mutableStateOf(init?.pass ?: "") }
     var domain by remember { mutableStateOf(init?.domain ?: "") }
+    var test by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
     AlertDialog(onDismissRequest = dismiss, title = { Text(if (init == null) "Sunucu ekle" else "Sunucuyu düzenle") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -155,12 +256,18 @@ private fun SmbDialog(init: SmbServer?, onDelete: (() -> Unit)?, dismiss: () -> 
                 OutlinedTextField(user, { user = it }, label = { Text("Kullanıcı (boş = misafir)") }, singleLine = true)
                 OutlinedTextField(pass, { pass = it }, label = { Text("Şifre") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
                 OutlinedTextField(domain, { domain = it }, label = { Text("Etki alanı (genelde boş)") }, singleLine = true)
+                Text("İpucu: Sunucu alanına \\\\192.168.1.20\\Filmler gibi tam adres de yazabilirsin. Windows'ta Microsoft hesabıyla giriş yapıyorsan kullanıcı adı e-posta adresin, şifre hesap şifrendir.", fontSize = 12.sp, color = Muted)
+                test?.let { t -> Text(if (t == "…") "Bağlanılıyor…" else t, fontSize = 13.sp, color = if (t.startsWith("✓")) Color(0xFF3DDC97) else if (t == "…") Muted else Color(0xFFFF8A80)) }
             }
         },
-        confirmButton = { TextButton(enabled = host.isNotBlank() && share.isNotBlank(), onClick = { save(SmbServer(name, host, share, user, pass, domain)) }) { Text("Kaydet") } },
+        confirmButton = { TextButton(enabled = host.isNotBlank(), onClick = { save(Smb.normalize(SmbServer(name, host, share, user, pass, domain))) }) { Text("Kaydet") } },
         dismissButton = {
             Row {
                 if (onDelete != null) TextButton(onClick = onDelete) { Text("Sil", color = Color(0xFFFF6B6B)) }
+                TextButton(enabled = host.isNotBlank() && test != "…", onClick = {
+                    test = "…"
+                    scope.launch { test = withContext(Dispatchers.IO) { Smb.test(Smb.normalize(SmbServer(name, host, share, user, pass, domain))) } }
+                }) { Text("Test et") }
                 TextButton(onClick = dismiss) { Text("Vazgeç") }
             }
         })
@@ -173,7 +280,7 @@ fun SmbBrowseScreen(s: SmbServer, path: String, go: (Route) -> Unit, back: () ->
     var err by remember(s, path) { mutableStateOf<String?>(null) }
     LaunchedEffect(s, path) {
         try { entries = withContext(Dispatchers.IO) { Smb.list(s, path) } }
-        catch (e: Exception) { Smb.drop(s); err = "Bağlanılamadı: ${e.message ?: e.javaClass.simpleName}\n\nSunucu adresini, paylaşım adını ve şifreyi kontrol et. Telefon ve bilgisayar aynı Wi-Fi'de olmalı." }
+        catch (e: Throwable) { Smb.drop(s); err = Smb.explain(e) }
     }
     Page(if (path.isEmpty()) s.title else path.substringAfterLast('\\'), back) {
         val e = entries

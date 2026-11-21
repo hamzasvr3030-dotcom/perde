@@ -1,0 +1,54 @@
+feature,area,priority,original,clone,notes
+Depolama/medya izni isteme,giriş,must,yes,no,READ_MEDIA_VIDEO (Android 13+) / READ_EXTERNAL_STORAGE
+Videoları otomatik tarama (MediaStore),kütüphane,must,yes,no,
+Klasör listesi + video sayısı,kütüphane,must,yes,no,
+Video listesi: küçük resim süre boyut çözünürlük,kütüphane,must,yes,no,
+Liste / ızgara görünümü,kütüphane,should,yes,no,
+Sıralama (ad tarih boyut süre),kütüphane,should,yes,no,
+Arama,kütüphane,should,yes,no,
+İzleme ilerleme çubuğu + yeni etiketi,kütüphane,should,yes,no,
+Son izlenen / devam et kartı,kütüphane,must,yes,no,
+Yeniden adlandır / sil / paylaş,dosya,should,yes,no,
+Video özellikleri (codec çözünürlük fps),dosya,could,yes,no,
+Oynat / duraklat / önceki / sonraki,oynatıcı,must,yes,no,
+Zaman çubuğu ile sarma,oynatıcı,must,yes,no,
+Kaldığı yerden devam (video başına konum),oynatıcı,must,yes,no,
+Geniş format desteği (MP4 MKV WebM AVI 3GP MOV),oynatıcı,must,yes,no,Media3; eski codecler için FFmpeg eklentisi
+Donanım / yazılım çözücü seçimi,oynatıcı,could,yes,no,Media3 extension renderer modu
+Hareket: sol dikey = parlaklık,hareket,must,yes,no,
+Hareket: sağ dikey = ses,hareket,must,yes,no,
+Hareket: yatay = ileri/geri sarma,hareket,must,yes,no,
+Hareket: çift dokunma ±10 sn / duraklat,hareket,must,yes,no,
+Hareket: sıkıştırarak yakınlaştırma,hareket,should,yes,no,
+Hareket: uzun bas = 2× hız,hareket,could,no,no,Orijinalde iki parmak dikey hız; bizimki modern alternatif
+En-boy oranı modları (sığdır doldur 16:9 4:3 kırp),oynatıcı,must,yes,no,
+Ekran yönü (otomatik / yatay / dikey kilit),oynatıcı,must,yes,no,
+Ekran kilidi,oynatıcı,must,yes,no,
+Çocuk kilidi,oynatıcı,could,yes,no,
+Gömülü altyazı seçimi,altyazı,must,yes,no,
+Harici altyazı dosyası (SRT ASS VTT),altyazı,must,yes,no,
+Aynı adlı altyazıyı otomatik bulma,altyazı,should,yes,no,
+Türkçe karakter kodlaması (UTF-8 / Windows-1254),altyazı,must,yes,no,
+Altyazı senkron kaydırma,altyazı,should,yes,no,
+Altyazı stili (boyut renk arka plan),altyazı,should,yes,no,
+Ses parçası seçimi,ses,must,yes,no,
+Ses senkron kaydırma,ses,could,yes,no,
+Oynatma hızı 0.25x-4x,oynatıcı,must,yes,no,
+A-B tekrar,oynatıcı,could,yes,no,
+Tekrar modu (tek / klasör),oynatıcı,should,yes,no,
+Uyku zamanlayıcısı,oynatıcı,should,yes,no,
+Ekolayzer,ses,could,yes,no,android.media.audiofx.Equalizer
+Ses yükseltme (%100 üstü),ses,could,yes,no,LoudnessEnhancer
+Resim içinde resim (PiP),oynatıcı,should,yes,no,
+Arka planda oynatma + medya bildirimi,oynatıcı,should,yes,no,MediaSessionService
+Ağ akışı (URL),ağ,should,yes,no,HTTP / HLS / DASH
+SMB / yerel ağ paylaşımı,ağ,could,yes,no,
+Başka uygulamadan Birlikte aç (intent),giriş,must,yes,no,ACTION_VIEW video/*
+Gizli / özel klasör (PIN),gizlilik,could,yes,no,
+Ayarlar ekranı,ayarlar,must,yes,no,
+Karanlık tema,arayüz,must,yes,no,
+Chromecast,ağ,could,yes,no,
+Dosya aktarımı (cihazlar arası),ağ,could,yes,no,
+Online dizi/film kataloğu,içerik,skip,yes,no,Lisanslı içerik - kapsam dışı
+Reklamlar / hesap,içerik,skip,yes,no,Gerek yok
+MX adı logo ve görselleri,marka,skip,yes,no,Kendi markamız yapılacak

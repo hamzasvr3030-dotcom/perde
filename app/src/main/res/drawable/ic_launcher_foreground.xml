@@ -1,0 +1,8 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <!-- perde (sahne perdesi) iki yandan açılır, ortada oynat üçgeni -->
+    <path android:fillColor="#FF7A45" android:pathData="M30,32 L44,32 Q40,54 44,76 L30,76 Z" />
+    <path android:fillColor="#FF7A45" android:pathData="M78,32 L64,32 Q68,54 64,76 L78,76 Z" />
+    <path android:fillColor="#FFD3A8" android:pathData="M48,43 L64,54 L48,65 Z" />
+    <path android:fillColor="#FF7A45" android:pathData="M28,28 L80,28 L80,33 L28,33 Z" />
+</vector>

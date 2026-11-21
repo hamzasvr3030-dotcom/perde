@@ -1,0 +1,614 @@
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@file:Suppress("UnsafeOptInUsageError")
+
+package com.perde.oynatici
+
+import android.graphics.Typeface
+import android.view.ContextThemeWrapper
+import android.view.View
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.AwaitPointerEventScope
+import androidx.compose.ui.input.pointer.PointerId
+import androidx.compose.ui.input.pointer.PointerInputScope
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.C
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.CaptionStyleCompat
+import androidx.media3.ui.PlayerView
+import androidx.media3.ui.SubtitleView
+import androidx.mediarouter.app.MediaRouteButton
+import com.google.android.gms.cast.framework.CastButtonFactory
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.roundToInt
+
+private val SUB_COLORS = listOf(0xFFFFFFFF.toInt() to "Beyaz", 0xFFFFE14D.toInt() to "Sarı", 0xFF7FE7FF.toInt() to "Mavi", 0xFFB6FF8A.toInt() to "Yeşil", 0xFFFFB38F.toInt() to "Turuncu")
+
+@Composable
+fun PlayerScreen(a: PlayerActivity) {
+    val ui = a.ui
+    val density = LocalDensity.current
+
+    LaunchedEffect(ui.showControls, ui.poke, ui.playing, ui.sheet, ui.casting) {
+        if (ui.showControls && ui.playing && ui.sheet == null && !ui.casting) { delay(3500); ui.showControls = false }
+    }
+
+    BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
+        val W = constraints.maxWidth.toFloat()
+        val H = constraints.maxHeight.toFloat()
+        val (bw, bh) = videoBox(ui, W, H)
+
+        if (!ui.casting) {
+            AndroidView(
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        useController = false
+                        player = a.player
+                        subtitleView?.visibility = View.GONE
+                        setShutterBackgroundColor(android.graphics.Color.BLACK)
+                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FILL
+                        setKeepContentOnPlayerReset(true)
+                    }
+                },
+                modifier = Modifier.align(Alignment.Center)
+                    .offset { IntOffset(ui.pan.x.roundToInt(), ui.pan.y.roundToInt()) }
+                    .requiredSize(with(density) { bw.toDp() }, with(density) { bh.toDp() })
+            )
+        } else CastPanel(a)
+
+        // altyazı (videonun yakınlaştırmasından bağımsız, hep ekranda)
+        AndroidView(
+            factory = { ctx -> SubtitleView(ctx).also { a.subtitleView = it } },
+            update = { sv ->
+                @Suppress("UNUSED_VARIABLE") val v = ui.subStyleVer
+                val fg = SUB_COLORS.getOrElse(Prefs.subColor) { SUB_COLORS[0] }.first
+                val bg = when (Prefs.subBg) { 0 -> android.graphics.Color.TRANSPARENT; 1 -> 0x99000000.toInt(); else -> android.graphics.Color.BLACK }
+                sv.setStyle(CaptionStyleCompat(fg, bg, android.graphics.Color.TRANSPARENT,
+                    if (Prefs.subBg == 0) CaptionStyleCompat.EDGE_TYPE_OUTLINE else CaptionStyleCompat.EDGE_TYPE_NONE,
+                    android.graphics.Color.BLACK, Typeface.DEFAULT_BOLD))
+                sv.setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * Prefs.subScale)
+                sv.setApplyEmbeddedFontSizes(false)
+            },
+            modifier = Modifier.fillMaxSize().padding(bottom = if (ui.showControls && !ui.inPip) 96.dp else 8.dp)
+        )
+
+        // hareket katmanı
+        Box(Modifier.fillMaxSize().pointerInput(Unit) { playerGestures(a) })
+
+        if (ui.buffering && !ui.inPip) CircularProgressIndicator(Modifier.align(Alignment.Center).size(52.dp), color = Accent)
+
+        ui.ind?.let { IndicatorView(it, Modifier.align(Alignment.Center)) }
+
+        AnimatedVisibility(ui.showControls && !ui.locked && !ui.inPip, enter = fadeIn(), exit = fadeOut()) { Controls(a) }
+
+        if (ui.locked && !ui.inPip) LockOverlay(a)
+
+        ui.error?.let { ErrorCard(a, it, Modifier.align(Alignment.Center)) }
+
+        ui.toast?.takeIf { !ui.inPip }?.let {
+            Text(it, color = Color.White, fontSize = 14.sp, modifier = Modifier.align(Alignment.TopCenter).padding(top = 72.dp)
+                .clip(RoundedCornerShape(20.dp)).background(Color(0xCC000000)).padding(horizontal = 16.dp, vertical = 8.dp))
+        }
+    }
+
+    ui.sheet?.let { s -> PlayerSheet(a, s) }
+}
+
+fun fmtSpeed(s: Float): String =
+    String.format(Locale.ROOT, "%.2f", s).trimEnd('0').trimEnd('.').replace('.', ',') + "×"
+
+private fun videoBox(ui: PlayerUi, W: Float, H: Float): Pair<Float, Float> {
+    if (ui.vw == 0 || ui.vh == 0) return W to H
+    val va = ui.vw * ui.par / ui.vh
+    fun fit(r: Float) = if (W / H > r) H * r to H else W to W / r
+    val (w, h) = when (ui.aspect) {
+        1 -> if (W / H > va) W to W / va else H * va to H
+        2 -> W to H
+        3 -> fit(16f / 9f)
+        4 -> fit(4f / 3f)
+        5 -> ui.vw * ui.par to ui.vh.toFloat()
+        else -> fit(va)
+    }
+    return w * ui.zoom to h * ui.zoom
+}
+
+// ---------------- hareketler ----------------
+private suspend fun AwaitPointerEventScope.track(id: PointerId, onMove: (Offset) -> Unit) {
+    while (true) {
+        val ev = awaitPointerEvent()
+        val c = ev.changes.firstOrNull { it.id == id } ?: break
+        if (!c.pressed) break
+        val d = c.positionChange(); c.consume(); onMove(d)
+    }
+}
+private suspend fun AwaitPointerEventScope.waitAllUp() {
+    while (true) { val ev = awaitPointerEvent(); if (ev.changes.none { it.pressed }) break }
+}
+
+private suspend fun PointerInputScope.playerGestures(a: PlayerActivity) {
+    val slop = viewConfiguration.touchSlop
+    val lpt = viewConfiguration.longPressTimeoutMillis
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false)
+        var mode = 0
+        var moved = Offset.Zero
+        var released = false
+        val res = withTimeoutOrNull(lpt) {
+            while (true) {
+                val ev = awaitPointerEvent()
+                if (ev.changes.count { it.pressed } >= 2) { mode = 4; break }
+                val c = ev.changes.firstOrNull { it.id == down.id }
+                if (c == null || !c.pressed) { released = true; break }
+                moved += c.positionChange()
+                if (moved.getDistance() > slop) {
+                    mode = if (abs(moved.x) > abs(moved.y)) 1 else if (down.position.x < size.width / 2f) 2 else 3
+                    break
+                }
+            }
+            true
+        }
+        if (res == null) mode = 5
+        val ui = a.ui
+        if (released && mode == 0) { a.onTap(down.position.x, size.width); return@awaitEachGesture }
+        if (ui.locked) { ui.lockHint++; waitAllUp(); return@awaitEachGesture }
+        if (ui.casting) { waitAllUp(); return@awaitEachGesture }
+        when (mode) {
+            1 -> if (!Prefs.gSeek) waitAllUp() else {
+                a.seekDragStart(); var dx = moved.x
+                a.seekDragUpdate(dx / size.width)
+                track(down.id) { dx += it.x; a.seekDragUpdate(dx / size.width) }
+                a.seekDragEnd()
+            }
+            2, 3 -> {
+                val bright = mode == 2
+                if ((bright && !Prefs.gBright) || (!bright && !Prefs.gVolume)) waitAllUp() else {
+                    a.vDragStart(bright); var dy = moved.y
+                    a.vDragUpdate(bright, -dy / size.height * 1.2f)
+                    track(down.id) { dy += it.y; a.vDragUpdate(bright, -dy / size.height * 1.2f) }
+                    a.vDragEnd()
+                }
+            }
+            4 -> if (!Prefs.gPinch) waitAllUp() else {
+                while (true) {
+                    val ev = awaitPointerEvent()
+                    if (ev.changes.none { it.pressed }) break
+                    val z = ev.calculateZoom(); val p = ev.calculatePan()
+                    if (z != 1f || p != Offset.Zero) a.pinch(z, p)
+                    ev.changes.forEach { it.consume() }
+                }
+                a.pinchEnd()
+            }
+            5 -> if (!Prefs.gLong) waitAllUp() else { a.longStart(); waitAllUp(); a.longEnd() }
+        }
+    }
+}
+
+// ---------------- göstergeler ----------------
+@Composable
+private fun IndicatorView(i: Ind, m: Modifier) {
+    val icon = when (i.kind) {
+        "bright" -> Icons.Filled.BrightnessMedium; "vol" -> if ((i.level ?: 1f) <= 0f) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp
+        "rew" -> Icons.Filled.FastRewind; "fwd" -> Icons.Filled.FastForward; "zoom" -> Icons.Filled.ZoomIn
+        "fast" -> Icons.Filled.Speed; else -> Icons.Filled.SwapHoriz
+    }
+    Column(m.clip(RoundedCornerShape(16.dp)).background(Color(0xB3000000)).padding(horizontal = 22.dp, vertical = 14.dp),
+        horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(icon, null, tint = Color.White, modifier = Modifier.size(34.dp))
+        Spacer(Modifier.height(6.dp))
+        Text(i.text, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+        i.level?.let {
+            Spacer(Modifier.height(8.dp))
+            LinearProgressIndicator(progress = { it.coerceIn(0f, 1f) }, modifier = Modifier.width(140.dp), color = Accent, trackColor = Color(0x55FFFFFF))
+        }
+    }
+}
+
+@Composable
+private fun ErrorCard(a: PlayerActivity, msg: String, m: Modifier) {
+    val ui = a.ui
+    Column(m.padding(24.dp).clip(RoundedCornerShape(18.dp)).background(Surf).padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(Icons.Filled.ErrorOutline, null, tint = Accent, modifier = Modifier.size(40.dp))
+        Spacer(Modifier.height(8.dp))
+        Text(msg, color = Color.White, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(14.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (ui.hasNext) Button(onClick = { ui.error = null; a.next() }) { Text("Sonraki video") }
+            OutlinedButton(onClick = { a.closePlayer() }) { Text("Kapat") }
+        }
+    }
+}
+
+@Composable
+private fun LockOverlay(a: PlayerActivity) {
+    val ui = a.ui
+    var visible by remember { mutableStateOf(true) }
+    var pressing by remember { mutableStateOf(false) }
+    LaunchedEffect(ui.lockHint) { visible = true; delay(2500); if (!pressing) visible = false }
+    if (!visible) return
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.align(Alignment.BottomCenter).padding(bottom = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(contentAlignment = Alignment.Center) {
+                if (pressing && ui.kids) {
+                    val p by produceState(0f) { val t0 = System.currentTimeMillis(); while (true) { value = ((System.currentTimeMillis() - t0) / 3000f).coerceAtMost(1f); delay(30) } }
+                    CircularProgressIndicator(progress = { p }, modifier = Modifier.size(72.dp), color = Accent)
+                }
+                Box(Modifier.size(60.dp).clip(CircleShape).background(Color(0xCC000000))
+                    .pointerInput(ui.kids) {
+                        detectTapGestures(
+                            onTap = { if (!ui.kids) a.unlock() else ui.lockHint++ },
+                            onPress = {
+                                if (ui.kids) {
+                                    pressing = true
+                                    val up = withTimeoutOrNull(3000) { tryAwaitRelease() }
+                                    pressing = false
+                                    if (up == null) a.unlock()
+                                }
+                            })
+                    }, contentAlignment = Alignment.Center) {
+                    Icon(if (ui.kids) Icons.Filled.ChildCare else Icons.Filled.Lock, null, tint = Color.White, modifier = Modifier.size(30.dp))
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(if (ui.kids) "Açmak için 3 saniye basılı tut" else "Kilidi açmak için dokun", color = Color.White, fontSize = 13.sp,
+                modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0x99000000)).padding(horizontal = 10.dp, vertical = 4.dp))
+        }
+    }
+}
+
+@Composable
+private fun CastPanel(a: PlayerActivity) {
+    Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF1B1210), Color.Black))),
+        verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(Icons.Filled.CastConnected, null, tint = Accent, modifier = Modifier.size(72.dp))
+        Spacer(Modifier.height(12.dp))
+        Text("${a.ui.castDevice} cihazında oynatılıyor", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Text(a.ui.title, color = Color(0xFFB4B7C0), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 32.dp))
+        Spacer(Modifier.height(16.dp))
+        OutlinedButton(onClick = { a.endCast() }) { Text("Yayını durdur") }
+    }
+}
+
+// ---------------- kontroller ----------------
+@Composable
+private fun CtlBtn(icon: ImageVector, desc: String, size: Int = 26, enabled: Boolean = true, tint: Color = Color.White, onClick: () -> Unit) {
+    IconButton(onClick = onClick, enabled = enabled) {
+        Icon(icon, desc, tint = if (enabled) tint else Color(0x66FFFFFF), modifier = Modifier.size(size.dp))
+    }
+}
+
+@Composable
+private fun CastButton() {
+    AndroidView(factory = { ctx ->
+        MediaRouteButton(ContextThemeWrapper(ctx, androidx.appcompat.R.style.Theme_AppCompat)).also {
+            try { CastButtonFactory.setUpMediaRouteButton(ctx.applicationContext, it) } catch (_: Throwable) { }
+        }
+    }, modifier = Modifier.size(44.dp))
+}
+
+@Composable
+private fun Controls(a: PlayerActivity) {
+    val ui = a.ui
+    Box(Modifier.fillMaxSize()) {
+        // üst çubuk
+        Row(Modifier.align(Alignment.TopCenter).fillMaxWidth()
+            .background(Brush.verticalGradient(listOf(Color(0xCC000000), Color.Transparent)))
+            .windowInsetsPadding(WindowInsets.displayCutout).padding(horizontal = 4.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            CtlBtn(Icons.AutoMirrored.Filled.ArrowBack, "Geri") { a.closePlayer() }
+            Text(ui.title, color = Color.White, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            if (!ui.casting) {
+                CtlBtn(Icons.Filled.ClosedCaption, "Altyazı", 24) { ui.sheet = Sheet.SUBS }
+                CtlBtn(Icons.Filled.Audiotrack, "Ses", 24) { ui.sheet = Sheet.AUDIO }
+                TextButton(onClick = { ui.sheet = Sheet.SPEED }) {
+                    Text(fmtSpeed(ui.speed), color = if (ui.speed != 1f) Accent else Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+            CastButton()
+            if (!ui.casting) CtlBtn(Icons.Filled.MoreVert, "Diğer", 24) { ui.sheet = Sheet.MORE }
+        }
+
+        // orta
+        Row(Modifier.align(Alignment.Center), horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
+            CtlBtn(Icons.Filled.SkipPrevious, "Önceki", 34, enabled = !ui.casting) { a.prev() }
+            CtlBtn(Icons.Filled.Replay10, "Geri sar", 32) { a.seekBy(-Prefs.seekStep * 1000L) }
+            val playing = if (ui.casting) ui.castPlaying else ui.playing
+            Box(Modifier.size(68.dp).clip(CircleShape).background(Color(0x66000000)).clickable { a.togglePlay() }, contentAlignment = Alignment.Center) {
+                Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, "Oynat/Duraklat", tint = Color.White, modifier = Modifier.size(44.dp))
+            }
+            CtlBtn(Icons.Filled.Forward10, "İleri sar", 32) { a.seekBy(Prefs.seekStep * 1000L) }
+            CtlBtn(Icons.Filled.SkipNext, "Sonraki", 34, enabled = ui.hasNext && !ui.casting) { a.next() }
+        }
+
+        // alt çubuk
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+            .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xDD000000))))
+            .windowInsetsPadding(WindowInsets.displayCutout).padding(horizontal = 12.dp).padding(bottom = 6.dp)) {
+            var drag by remember { mutableStateOf<Float?>(null) }
+            val frac = if (ui.dur > 0) (ui.pos.toFloat() / ui.dur).coerceIn(0f, 1f) else 0f
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(fmtTime(drag?.let { (it * ui.dur).toLong() } ?: ui.pos), color = Color.White, fontSize = 13.sp)
+                Slider(
+                    value = drag ?: frac,
+                    onValueChange = { drag = it; ui.poke++ },
+                    onValueChangeFinished = { drag?.let { a.seekTo((it * ui.dur).toLong()) }; drag = null },
+                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                    colors = SliderDefaults.colors(thumbColor = Accent, activeTrackColor = Accent, inactiveTrackColor = Color(0x55FFFFFF))
+                )
+                Text(fmtTime(ui.dur), color = Color.White, fontSize = 13.sp)
+            }
+            if (ui.abA >= 0) Text(
+                if (ui.abB >= 0) "A-B: ${fmtTime(ui.abA)} – ${fmtTime(ui.abB)}" else "A: ${fmtTime(ui.abA)} (B için tekrar dokun)",
+                color = AccentSoft, fontSize = 12.sp)
+            if (!ui.casting) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                CtlBtn(Icons.Filled.LockOpen, "Kilitle", 24) { a.lock() }
+                CtlBtn(Icons.Filled.AspectRatio, "Görüntü oranı", 24) { a.cycleAspect() }
+                CtlBtn(Icons.Filled.ScreenRotation, "Ekran yönü", 24) { a.cycleOrient() }
+                CtlBtn(when (ui.repeat) { 1 -> Icons.Filled.RepeatOne; else -> Icons.Filled.Repeat }, "Tekrar", 24,
+                    tint = if (ui.repeat > 0) Accent else Color.White) { a.cycleRepeat() }
+                CtlBtn(Icons.Filled.Shuffle, "Karışık", 24, tint = if (ui.shuffle) Accent else Color.White) { a.toggleShuffle() }
+                CtlBtn(Icons.Filled.PictureInPictureAlt, "Küçük pencere", 24) { a.enterPip() }
+            }
+        }
+    }
+}
+
+// ---------------- alt sayfalar ----------------
+@Composable
+private fun Title(t: String) = Text(t, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+
+@Composable
+private fun Section(t: String) = Text(t, color = Accent, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.padding(top = 18.dp, bottom = 6.dp))
+
+@Composable
+fun Choice(label: String, selected: Boolean, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(vertical = 10.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        RadioButton(selected = selected, onClick = onClick)
+        Text(label, modifier = Modifier.padding(start = 6.dp))
+    }
+}
+
+@Composable
+private fun OffsetRow(value: Long, onChange: (Long) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        FilledTonalButton(onClick = { onChange(value - 500) }, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("−0,5") }
+        FilledTonalButton(onClick = { onChange(value - 100) }, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("−0,1") }
+        Text(String.format(Locale.forLanguageTag("tr"), "%+.1f sn", value / 1000f), fontWeight = FontWeight.Bold, modifier = Modifier.width(76.dp), textAlign = TextAlign.Center)
+        FilledTonalButton(onClick = { onChange(value + 100) }, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("+0,1") }
+        FilledTonalButton(onClick = { onChange(value + 500) }, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("+0,5") }
+    }
+    if (value != 0L) TextButton(onClick = { onChange(0) }) { Text("Sıfırla") }
+}
+
+@Composable
+private fun Tile(icon: ImageVector, label: String, active: Boolean = false, onClick: () -> Unit) {
+    Column(Modifier.width(104.dp).clip(RoundedCornerShape(14.dp)).background(if (active) Color(0xFF4A2414) else Surf2)
+        .clickable(onClick = onClick).padding(vertical = 12.dp, horizontal = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(icon, null, tint = if (active) Accent else Color.White)
+        Spacer(Modifier.height(6.dp))
+        Text(label, fontSize = 12.sp, textAlign = TextAlign.Center, maxLines = 2, lineHeight = 14.sp)
+    }
+}
+
+@Composable
+private fun PlayerSheet(a: PlayerActivity, s: Sheet) {
+    val ui = a.ui
+    ModalBottomSheet(onDismissRequest = { ui.sheet = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = Surf) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
+            when (s) {
+                Sheet.SUBS -> SubsSheet(a)
+                Sheet.AUDIO -> AudioSheet(a)
+                Sheet.SPEED -> SpeedSheet(a)
+                Sheet.MORE -> MoreSheet(a)
+                Sheet.SLEEP -> SleepSheet(a)
+                Sheet.EQ -> EqSheet()
+                Sheet.INFO -> InfoSheet(a)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SubsSheet(a: PlayerActivity) {
+    val ui = a.ui
+    Title("Altyazı")
+    key(ui.tracksVer) {
+        val list = a.tracks(C.TRACK_TYPE_TEXT)
+        var ver by remember { mutableIntStateOf(0) }
+        key(ver) {
+            Choice("Kapalı", a.subsDisabled || list.none { it.selected }) { a.subsOff(); ver++ }
+            list.forEach { t -> Choice(t.label, t.selected && !a.subsDisabled) { a.selectTrack(t, C.TRACK_TYPE_TEXT); ver++ } }
+        }
+    }
+    Spacer(Modifier.height(6.dp))
+    OutlinedButton(onClick = { a.pickSub.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) {
+        Icon(Icons.Filled.FileOpen, null); Spacer(Modifier.width(8.dp)); Text("Dosyadan altyazı aç (SRT, ASS, VTT)")
+    }
+    if (ui.hasExtSub) {
+        Section("Senkron — altyazı erken/geç kalıyorsa")
+        OffsetRow(ui.subOff) { a.setSubOffset(it) }
+        TextButton(onClick = { a.removeExtSub() }) { Text("Harici altyazıyı kaldır") }
+    }
+    Section("Görünüm")
+    var scale by remember { mutableFloatStateOf(Prefs.subScale) }
+    Text("Yazı boyutu: %${(scale * 100).toInt()}")
+    Slider(scale, { scale = it; Prefs.subScale = it; a.applySubStyle() }, valueRange = 0.5f..2.5f)
+    var color by remember { mutableIntStateOf(Prefs.subColor) }
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        SUB_COLORS.forEachIndexed { i, (c, n) ->
+            FilterChip(selected = color == i, onClick = { color = i; Prefs.subColor = i; a.applySubStyle() }, label = { Text(n) },
+                leadingIcon = { Box(Modifier.size(14.dp).clip(CircleShape).background(Color(c))) })
+        }
+    }
+    var bg by remember { mutableIntStateOf(Prefs.subBg) }
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf("Arka plan yok", "Yarı saydam", "Siyah kutu").forEachIndexed { i, n ->
+            FilterChip(selected = bg == i, onClick = { bg = i; Prefs.subBg = i; a.applySubStyle() }, label = { Text(n) })
+        }
+    }
+    Section("Karakter kodlaması (ş, ğ, ı bozuk çıkıyorsa değiştir)")
+    var enc by remember { mutableIntStateOf(Prefs.subEnc) }
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf("Otomatik", "UTF-8", "Türkçe (Windows-1254)").forEachIndexed { i, n ->
+            FilterChip(selected = enc == i, onClick = { enc = i; Prefs.subEnc = i; if (ui.hasExtSub) a.reloadSub() }, label = { Text(n) })
+        }
+    }
+}
+
+@Composable
+private fun AudioSheet(a: PlayerActivity) {
+    val ui = a.ui
+    Title("Ses")
+    key(ui.tracksVer) {
+        val list = a.tracks(C.TRACK_TYPE_AUDIO)
+        var ver by remember { mutableIntStateOf(0) }
+        if (list.isEmpty()) Text("Bu videoda seçilebilir ses parçası yok.")
+        key(ver) { list.forEach { t -> Choice(t.label, t.selected) { a.selectTrack(t, C.TRACK_TYPE_AUDIO); ver++ } } }
+    }
+    Section("Ses senkronu — ses görüntüden önce/sonra geliyorsa")
+    OffsetRow(ui.audioOff) { a.setAudioOffset(it) }
+    Spacer(Modifier.height(8.dp))
+    OutlinedButton(onClick = { ui.sheet = Sheet.EQ }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Filled.Equalizer, null); Spacer(Modifier.width(8.dp)); Text("Ekolayzer") }
+}
+
+@Composable
+private fun SpeedSheet(a: PlayerActivity) {
+    val ui = a.ui
+    Title("Oynatma hızı")
+    Text(String.format(Locale.forLanguageTag("tr"), "%.2f×", ui.speed), fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Accent,
+        modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+    Slider(ui.speed, { a.setSpeed(Math.round(it * 20) / 20f) }, valueRange = 0.25f..4f)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f, 4f).forEach { v ->
+            FilterChip(selected = ui.speed == v, onClick = { a.setSpeed(v) }, label = { Text(fmtSpeed(v)) })
+        }
+    }
+    Text("İpucu: Ekrana basılı tutarak geçici olarak 2× hızda izleyebilirsin.", fontSize = 13.sp, color = Color(0xFFB4B7C0), modifier = Modifier.padding(top = 12.dp))
+}
+
+@Composable
+private fun MoreSheet(a: PlayerActivity) {
+    val ui = a.ui
+    var decSw by remember { mutableStateOf(Prefs.decoderSw) }
+    Title("Diğer")
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Tile(Icons.Filled.Loop, when { ui.abA < 0 -> "A-B tekrar"; ui.abB < 0 -> "B noktasını işaretle"; else -> "A-B'yi kapat" }, ui.abA >= 0) { a.abStep() }
+        Tile(Icons.Filled.Timer, if (ui.sleepLabel.isEmpty()) "Uyku zamanlayıcısı" else "Uyku: ${ui.sleepLabel}", ui.sleepLabel.isNotEmpty()) { ui.sheet = Sheet.SLEEP }
+        Tile(Icons.Filled.Equalizer, "Ekolayzer", Prefs.eqOn) { ui.sheet = Sheet.EQ }
+        Tile(if (ui.repeat == 1) Icons.Filled.RepeatOne else Icons.Filled.Repeat, PlayerActivity.REPEATS[ui.repeat], ui.repeat > 0) { a.cycleRepeat() }
+        Tile(Icons.Filled.Shuffle, "Karışık çal", ui.shuffle) { a.toggleShuffle() }
+        Tile(Icons.Filled.Headphones, "Arka planda oynat", ui.bg) { a.toggleBg() }
+        Tile(Icons.Filled.PictureInPictureAlt, "Küçük pencere") { ui.sheet = null; a.enterPip() }
+        Tile(Icons.Filled.ScreenRotation, PlayerActivity.ORIENTS[ui.orient]) { a.cycleOrient() }
+        Tile(Icons.Filled.AspectRatio, PlayerActivity.ASPECTS[ui.aspect]) { a.cycleAspect() }
+        Tile(Icons.Filled.Lock, "Ekran kilidi") { a.lock() }
+        Tile(Icons.Filled.ChildCare, "Çocuk kilidi") { a.kidsLock() }
+        Tile(Icons.Filled.Info, "Video bilgisi") { ui.sheet = Sheet.INFO }
+        Tile(Icons.Filled.Memory, if (decSw) "Çözücü: yazılım öncelikli" else "Çözücü: donanım", decSw) {
+            decSw = !decSw; Prefs.decoderSw = decSw; a.toast("Çözücü ayarı oynatıcı yeniden açılınca geçerli olur")
+        }
+    }
+}
+
+@Composable
+private fun SleepSheet(a: PlayerActivity) {
+    Title("Uyku zamanlayıcısı")
+    if (a.ui.sleepLabel.isNotEmpty()) Text("Kalan: ${a.ui.sleepLabel}", color = Accent, modifier = Modifier.padding(bottom = 6.dp))
+    listOf(0 to "Kapalı", 15 to "15 dakika", 30 to "30 dakika", 45 to "45 dakika", 60 to "1 saat", 90 to "1,5 saat", 120 to "2 saat", -1 to "Bu video bitince")
+        .forEach { (m, l) -> Choice(l, false) { a.setSleep(m) } }
+}
+
+@Composable
+private fun EqSheet() {
+    Title("Ekolayzer")
+    LaunchedEffect(Unit) { Engine.ensureEffects() }
+    val eq = Engine.eq
+    if (eq == null) { Text("Ekolayzer bu cihazda kullanılamıyor ya da video henüz başlamadı."); return }
+    var on by remember { mutableStateOf(Prefs.eqOn) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Ekolayzer açık", Modifier.weight(1f)); Switch(on, { on = it; Prefs.eqOn = it; Engine.applyEq() })
+    }
+    val n = eq.numberOfBands.toInt()
+    val range = eq.bandLevelRange
+    val levels = remember { mutableStateListOf<Float>().apply { repeat(n) { add(eq.getBandLevel(it.toShort()).toFloat()) } } }
+    var preset by remember { mutableIntStateOf(Prefs.eqPreset) }
+    Section("Hazır ayarlar")
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(selected = preset < 0, onClick = { preset = -1; Prefs.eqPreset = -1 }, label = { Text("Özel") })
+        for (p in 0 until eq.numberOfPresets) {
+            FilterChip(selected = preset == p, onClick = {
+                preset = p; Prefs.eqPreset = p; Prefs.eqOn = true; on = true; Engine.applyEq()
+                for (i in 0 until n) levels[i] = eq.getBandLevel(i.toShort()).toFloat()
+            }, label = { Text(eqName(eq.getPresetName(p.toShort()))) })
+        }
+    }
+    Section("Bantlar")
+    for (i in 0 until n) {
+        val hz = eq.getCenterFreq(i.toShort()) / 1000
+        Text(if (hz >= 1000) "${hz / 1000} kHz" else "$hz Hz", fontSize = 13.sp)
+        Slider(levels[i], {
+            levels[i] = it; preset = -1; Prefs.eqPreset = -1; Prefs.eqOn = true; on = true
+            Prefs.eqBands = levels.joinToString(",") { v -> v.toInt().toString() }; Engine.applyEq()
+        }, valueRange = range[0].toFloat()..range[1].toFloat())
+    }
+    if (Engine.bassBoost?.strengthSupported == true) {
+        Section("Bas güçlendirme")
+        var bass by remember { mutableFloatStateOf(Prefs.bass.toFloat()) }
+        Slider(bass, { bass = it; Prefs.bass = it.toInt(); Prefs.eqOn = true; on = true; Engine.applyEq() }, valueRange = 0f..1000f)
+    }
+    Text("Ses yükseltme: Ekranın sağ yarısında yukarı kaydırarak sesi %200'e kadar çıkarabilirsin (Ayarlar'dan kapatılabilir).",
+        fontSize = 13.sp, color = Color(0xFFB4B7C0), modifier = Modifier.padding(top = 12.dp))
+}
+
+private fun eqName(n: String) = when (n.lowercase()) {
+    "normal" -> "Normal"; "classical" -> "Klasik"; "dance" -> "Dans"; "flat" -> "Düz"; "folk" -> "Halk"
+    "heavy metal" -> "Metal"; "hip hop" -> "Hip hop"; "jazz" -> "Caz"; "pop" -> "Pop"; "rock" -> "Rock"; else -> n
+}
+
+@Composable
+private fun InfoSheet(a: PlayerActivity) {
+    Title("Video bilgisi")
+    a.infoLines().forEach { (k, v) ->
+        Row(Modifier.padding(vertical = 5.dp)) {
+            Text(k, color = Color(0xFFB4B7C0), modifier = Modifier.width(120.dp), fontSize = 14.sp)
+            Text(v, fontSize = 14.sp)
+        }
+    }
+}

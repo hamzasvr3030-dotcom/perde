@@ -89,6 +89,8 @@ object Art {
     private val miss = HashSet<String>()
     var ver by androidx.compose.runtime.mutableIntStateOf(0)
 
+    fun peek(key: String, px: Int): Bitmap? = cache.get("$key@$px")
+
     suspend fun load(ctx: Context, key: String, uri: Uri?, path: String?, px: Int = 512, net: Boolean = true): Bitmap? {
         val ck = "$key@$px"
         cache.get(ck)?.let { return it }

@@ -81,7 +81,7 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 @Composable
 fun ArtImage(key: String, uri: Uri?, path: String?, modifier: Modifier, shape: Shape = RoundedCornerShape(12.dp), px: Int = 256) {
     val ctx = LocalContext.current
-    var bmp by remember(key, px) { mutableStateOf<ImageBitmap?>(null) }
+    var bmp by remember(key, px) { mutableStateOf<ImageBitmap?>(Art.peek(key, px)?.asImageBitmap()) }
     LaunchedEffect(key, px, Art.ver) { bmp = Art.load(ctx, key, uri, path, px)?.asImageBitmap() }
     Box(modifier.clip(shape).background(Brush.linearGradient(listOf(AccentDeep, Surf2))), contentAlignment = Alignment.Center) {
         val b = bmp
@@ -323,6 +323,7 @@ private fun SongActions(s: Song, vm: LibVM, dismiss: () -> Unit) {
                 Engine.enqueue(ctx, listOf(s), next = true); if (playing) toast(ctx, "Bu şarkıdan sonra çalacak"); dismiss()
             }
             ActionItem(Icons.Filled.Radio, "Bu şarkıdan radyo başlat") { dismiss(); Mixes.startRadio(ctx, s, vm.songs) }
+            ActionItem(Icons.Filled.AutoAwesome, "Story olarak paylaş") { dismiss(); StoryCard.share(ctx, s.key, s.title, s.artist) }
             ActionItem(Icons.AutoMirrored.Filled.PlaylistAdd, "Sıranın sonuna ekle") {
                 val playing = Engine.player != null && NowState.isMusic
                 Engine.enqueue(ctx, listOf(s), next = false); if (playing) toast(ctx, "Sıranın sonuna eklendi"); dismiss()
@@ -385,7 +386,7 @@ fun MiniPlayer(open: () -> Unit) {
 }
 
 // ---------------- şimdi çalıyor ----------------
-private enum class NpSheet { QUEUE, SLEEP, EQ, PLAYLIST, SETTINGS, BOOST }
+private enum class NpSheet { QUEUE, SLEEP, EQ, PLAYLIST, SETTINGS, BOOST, FX }
 
 @Composable
 fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
@@ -457,6 +458,8 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
                     if (song != null) DropdownMenuItem({ Text("Paylaş") }, {
                         menu = false; ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("audio/*").putExtra(Intent.EXTRA_STREAM, song.uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Paylaş"))
                     }, leadingIcon = { Icon(Icons.Filled.Share, null) })
+                    DropdownMenuItem({ Text("Story olarak paylaş") }, { menu = false; StoryCard.share(ctx, key, NowState.title, NowState.artist) }, leadingIcon = { Icon(Icons.Filled.AutoAwesome, null) })
+                    if (song != null) DropdownMenuItem({ Text("Zil sesi yap") }, { menu = false; RingReq.song = song }, leadingIcon = { Icon(Icons.Filled.NotificationsActive, null) })
                     DropdownMenuItem({ Text("Çalma ayarları") }, { menu = false; sheet = NpSheet.SETTINGS }, leadingIcon = { Icon(Icons.Filled.Tune, null) })
                     DropdownMenuItem({ Text("Çalmayı durdur") }, {
                         menu = false; ctx.stopService(Intent(ctx, PlaybackService::class.java)); Engine.release(); close()
@@ -467,41 +470,64 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
 
         // kapağı sağa/sola kaydırarak şarkı değiştir
         val swipe = remember { androidx.compose.animation.core.Animatable(0f) }
+        val slotPx = remember { mutableFloatStateOf(1f) }
         val swScope = rememberCoroutineScope()
         val view = LocalView.current
-        LaunchedEffect(key) { if (swipe.value != 0f) { swipe.snapTo(-swipe.value.coerceIn(-1f, 1f) * 400f); swipe.animateTo(0f, tween(260)) } }
+        LaunchedEffect(key) {
+            if (npView != 0) { if (swipe.value != 0f) { swipe.snapTo(-swipe.value.coerceIn(-1f, 1f) * 400f); swipe.animateTo(0f, tween(260)) } }
+            else if (swipe.value != 0f && !swipe.isRunning) swipe.snapTo(0f)
+        }
         Box(Modifier.weight(1f).fillMaxWidth()
             .pointerInput(Unit) {
                 val w = size.width.toFloat()
                 detectHorizontalDragGestures(
                     onDragEnd = {
                         val x = swipe.value
+                        val cover = npView == 0
+                        val tgt = if (cover) slotPx.floatValue else w
+                        val thr = if (cover) tgt * 0.28f else w * 0.22f
                         swScope.launch {
                             when {
-                                x < -w * 0.22f && p.hasNextMediaItem() -> { swipe.animateTo(-w, tween(160)); haptic(view); p.seekToNextMediaItem(); p.play() }
-                                x > w * 0.22f && (p.hasPreviousMediaItem() || p.currentPosition > 3000) -> { swipe.animateTo(w, tween(160)); haptic(view)
-                                    if (p.hasPreviousMediaItem()) p.seekToPreviousMediaItem() else { p.seekTo(0); swipe.snapTo(0f) }; p.play() }
+                                x < -thr && p.hasNextMediaItem() -> { swipe.animateTo(-tgt, tween(220)); haptic(view); p.seekToNextMediaItem(); p.play(); if (cover) swipe.snapTo(0f) }
+                                x > thr && p.hasPreviousMediaItem() -> { swipe.animateTo(tgt, tween(220)); haptic(view); p.seekToPreviousMediaItem(); p.play(); if (cover) swipe.snapTo(0f) }
+                                x > thr && p.currentPosition > 3000 -> { haptic(view); p.seekTo(0); swipe.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 0.7f)) }
                                 else -> swipe.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 0.7f))
                             }
                         }
                     },
                     onDragCancel = { swScope.launch { swipe.animateTo(0f) } }
-                ) { ch, dx -> ch.consume(); swScope.launch { swipe.snapTo(swipe.value + dx) } }
+                ) { ch, dx -> ch.consume()
+                    val stuck = npView == 0 && ((swipe.value + dx < 0 && !p.hasNextMediaItem()) || (swipe.value + dx > 0 && !p.hasPreviousMediaItem()))
+                    swScope.launch { swipe.snapTo(swipe.value + if (stuck) dx * 0.3f else dx) } }
             }
-            .graphicsLayer { translationX = swipe.value; alpha = 1f - (kotlin.math.abs(swipe.value) / (size.width * 1.4f)).coerceIn(0f, 0.6f); rotationZ = swipe.value / size.width * 6f },
+            .graphicsLayer { if (npView != 0) { translationX = swipe.value; alpha = 1f - (kotlin.math.abs(swipe.value) / (size.width * 1.4f)).coerceIn(0f, 0.6f) } },
             contentAlignment = Alignment.Center) {
             if (npView == 1) Column { Box(Modifier.weight(1f)) { LyricsView(lyrics.value.map { -1L to it.second }.filter { it.second.isNotBlank() }, pos) { } }
                 if (lyricsSrc.isNotEmpty()) Text(lyricsSrc, fontSize = 10.sp, color = Color.White.copy(alpha = 0.45f)) }
             else if (npView == 2) VizView(art, tint, NowState.playing)
-            else Box(contentAlignment = Alignment.Center) {
-                PeekArt(p.previousMediaItemIndex, p, Modifier.align(Alignment.CenterStart).offset(x = (-196).dp))
-                PeekArt(p.nextMediaItemIndex, p, Modifier.align(Alignment.CenterEnd).offset(x = 196.dp))
-                Box(Modifier.fillMaxWidth(0.84f).aspectRatio(1f).scale(artScale).shadow(30.dp, RoundedCornerShape(28.dp)).clip(RoundedCornerShape(28.dp))
-                .background(Brush.linearGradient(listOf(tint, AccentDeep))), contentAlignment = Alignment.Center) {
-                val b = art
-                if (b != null) Image(b, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                else Icon(Icons.Filled.MusicNote, null, tint = Color.White.copy(alpha = 0.6f), modifier = Modifier.fillMaxSize(0.4f))
-            }
+            else BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                // kapak şeridi: kaydırınca kapaklar birlikte kayar, sıradaki ortaya gelir
+                val side = minOf(maxWidth * 0.84f, maxHeight * 0.96f)
+                val sp = constraints.maxWidth * 0.78f
+                SideEffect { slotPx.floatValue = sp }
+                val frac = swipe.value / sp
+                val n = p.mediaItemCount
+                listOf(-1 to p.previousMediaItemIndex, 1 to p.nextMediaItemIndex, 0 to p.currentMediaItemIndex).forEach { (d, idx) ->
+                    if (idx == C.INDEX_UNSET || idx < 0 || idx >= n) return@forEach
+                    val pos = d + frac
+                    val dist = kotlin.math.abs(pos).coerceAtMost(1f)
+                    if (kotlin.math.abs(pos) > 1.6f) return@forEach
+                    val k = p.getMediaItemAt(idx).mediaId
+                    val sg = Music.byKey(k)
+                    val sc = (1f - 0.2f * dist) * (artScale + (1f - artScale) * dist)
+                    Box(Modifier.zIndex(1f - dist).graphicsLayer { translationX = pos * sp; scaleX = sc; scaleY = sc; alpha = 1f - 0.6f * dist }
+                        .size(side).shadow(if (dist < 0.5f) 30.dp else 0.dp, RoundedCornerShape(28.dp)).clip(RoundedCornerShape(28.dp))
+                        .background(Brush.linearGradient(listOf(tint, AccentDeep))), contentAlignment = Alignment.Center) {
+                        val b = art
+                        if (k == key && b != null) Image(b, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        else ArtImage(k, sg?.uri, sg?.path ?: k.takeIf { it.startsWith("/") }, Modifier.fillMaxSize(), RoundedCornerShape(28.dp), 640)
+                    }
+                }
             }
         }
 
@@ -555,6 +581,7 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
             NpTool(Icons.Filled.Bedtime, if (sleepLabel.isEmpty()) "Uyku" else sleepLabel, sleepLabel.isNotEmpty()) { sheet = NpSheet.SLEEP }
             NpTool(Icons.Filled.VolumeUp, if (Prefs.musicBoost > 0) "%${100 + Prefs.musicBoost}" else "Ses+", Prefs.musicBoost > 0) { sheet = NpSheet.BOOST }
             NpTool(Icons.Filled.Equalizer, "Ekolayzer", Prefs.eqOn) { sheet = NpSheet.EQ }
+            NpTool(Icons.Filled.SurroundSound, if (Fx.eightD) "8D" else if (Fx.reverb > 0) listOf("", "Oda", "Salon", "Konser")[Fx.reverb] else "Efekt", Fx.on) { sheet = NpSheet.FX }
         }
     }
 
@@ -576,6 +603,7 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
                         }
                         NpSheet.EQ -> EqContent()
                         NpSheet.BOOST -> MusicBoostContent()
+                        NpSheet.FX -> FxContent()
                         NpSheet.SETTINGS -> TransitionSettings()
                         NpSheet.PLAYLIST -> PlaylistPickerContent(listOf(key)) { msg -> toast(ctx, msg); sheet = null }
                         else -> {}

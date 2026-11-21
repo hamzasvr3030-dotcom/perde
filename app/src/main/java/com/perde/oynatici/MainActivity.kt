@@ -89,6 +89,7 @@ sealed interface Route {
     data object DupR : Route
     data class SettingsPage(val section: Int) : Route
     data object CleanupR : Route
+    data object SongDupR : Route
     data object ReportR : Route
     data object ListenHistR : Route
     data object SummaryR : Route
@@ -249,6 +250,7 @@ fun MainApp() {
     AppState.update?.let { UpdateDialog(it) { AppState.update = null } }
     AppState.clipUrl?.let { u -> ClipDialog(u) }
     CrashDialog()
+    RingReq.song?.let { s -> RingtoneSheet(s) { RingReq.song = null } }
 }
 
 @Composable
@@ -325,6 +327,7 @@ private fun Shell(vm: LibVM) {
                 Route.DupR -> DupesScreen(vm, back)
                 is Route.SettingsPage -> SettingsPage(vm, r.section, back)
                 Route.CleanupR -> CleanupScreen(vm, back)
+                Route.SongDupR -> DuplicatesScreen(vm, back)
                 Route.ReportR -> ReportScreen(back)
                 Route.ListenHistR -> ListenHistoryScreen(back)
                 Route.SummaryR -> SummaryScreen(vm, back)

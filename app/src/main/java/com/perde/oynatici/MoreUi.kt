@@ -133,6 +133,7 @@ fun MoreScreen(vm: LibVM, go: (Route) -> Unit) {
             Group("Uygulama") {
                 GroupRow(Icons.Filled.SystemUpdate, "Güncellemeleri denetle", if (checking) "Denetleniyor…" else "Sürüm ${Updater.current(ctx)}", chevron = !checking) { checkUpdate() }
                 GroupRow(Icons.Filled.AutoGraph, "Aylık özet", "Bu ay ne dinledin, ne izledin") { go(Route.SummaryR) }
+                GroupRow(Icons.Filled.ContentCopy, "Yinelenen şarkılar", "Aynı şarkının farklı kalitedeki dosyaları") { go(Route.SongDupR) }
                 GroupRow(Icons.Filled.History, "Dinleme geçmişi", "Ne zaman ne dinledin") { go(Route.ListenHistR) }
                 GroupRow(Icons.Filled.BugReport, "Hata raporu", "Sorun olursa kopyalayıp gönder") { go(Route.ReportR) }
                 GroupRow(Icons.Filled.Info, "Uygulama hakkında", last = true) { go(Route.SettingsPage(6)) }

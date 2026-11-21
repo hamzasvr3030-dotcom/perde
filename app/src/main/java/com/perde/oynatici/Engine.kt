@@ -36,6 +36,7 @@ object Engine {
     val delay = AudioDelayProcessor()
     val night = NightProcessor()
     val viz = VizProcessor()
+    val fx = FxProcessor()
     var audioOnly = false
     var sleepEnd = false
     var sleptAt = 0L
@@ -138,8 +139,10 @@ object Engine {
     /** Son müzik kuyruğunu sakla (kulaklık takınca devam için) ve şarkıya göre ses seviyesini hatırla. */
     private fun musicBookkeeping(p: ExoPlayer) {
         val item = p.currentMediaItem ?: return
+        fx.enabled = true
         if (item.mediaMetadata.mediaType != androidx.media3.common.MediaMetadata.MEDIA_TYPE_MUSIC) {
             if (musicBoostOn) { setBoost(0); musicBoostOn = false }   // müzik yükseltmesi videoya taşmasın
+            fx.enabled = false
             return
         }
         applyMusicBoost()
@@ -179,12 +182,13 @@ object Engine {
         val app = ctx.applicationContext
         appCtx = app
         night.on = Prefs.night
+        fx.eightD = Prefs.sp.getBoolean("fx8d", false); fx.reverb = Prefs.sp.getInt("fxRev", 0)
         val rf = object : DefaultRenderersFactory(app) {
             override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink =
                 DefaultAudioSink.Builder(context)
                     .setEnableFloatOutput(false)
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                    .setAudioProcessorChain(DefaultAudioSink.DefaultAudioProcessorChain(delay, night, viz))
+                    .setAudioProcessorChain(DefaultAudioSink.DefaultAudioProcessorChain(delay, night, fx, viz))
                     .build()
         }
         rf.setExtensionRendererMode(

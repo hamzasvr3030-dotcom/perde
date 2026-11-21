@@ -157,7 +157,7 @@ fun DownloadScreen(go: (Route) -> Unit) {
                                 onList = a.playlistUrl?.let { pl -> { openList(pl) } })
                         }
                         is Web.Analysis.Multi -> {
-                            item { MultiHeader(a, selected, follow, { follow = it }, { n -> selected.clear(); selected.addAll(a.entries.take(n).map { it.id }) }) { audio ->
+                            item { MultiHeader(a, selected, follow, { follow = it }, { n -> selected.clear(); selected.addAll(if (n < 0) a.entries.filter { !SongMatch.have(Music.cache, it.title, it.uploader) }.map { it.id } else a.entries.take(n).map { it.id }); if (n < 0) toast(ctx, "${a.entries.size - selected.size} şarkı zaten telefonda, ${selected.size} tanesi seçildi") }) { audio ->
                                 val es = a.entries.filter { it.id in selected }
                                 if (es.isNotEmpty()) ask(DlReq.ListReq(a.title, es, follow, a.url, a.entries.map { it.id }), audio)
                             } }
@@ -342,6 +342,7 @@ private fun MultiHeader(a: Web.Analysis.Multi, selected: List<String>, follow: B
             if (a.isChannel) listOf(10, 25, 50).forEach { n -> AssistChip(onClick = { pickFirst(n) }, label = { Text("Son $n") }) }
             AssistChip(onClick = { pickFirst(a.entries.size) }, label = { Text("Tümünü seç") }, leadingIcon = { Icon(Icons.Filled.SelectAll, null, Modifier.size(18.dp)) })
             AssistChip(onClick = { pickFirst(0) }, label = { Text("Hiçbiri") })
+            if (Music.cache.isNotEmpty()) AssistChip(onClick = { pickFirst(-1) }, label = { Text("Telefonda olmayanlar") }, leadingIcon = { Icon(Icons.Filled.PhoneAndroid, null, Modifier.size(18.dp)) })
         }
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { onFollow(!follow) }) {
             Checkbox(follow, onFollow)

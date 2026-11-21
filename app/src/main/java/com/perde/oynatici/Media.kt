@@ -228,7 +228,7 @@ object Library {
     }
 
     fun publicDir(): File =
-        File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "Perde").apply { mkdirs() }
+        File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "Kadraj").apply { mkdirs() }
 
     fun restoreFromPrivate(ctx: Context, f: File): Boolean {
         val dest = unique(publicDir(), f.name)

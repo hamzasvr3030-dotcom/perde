@@ -121,7 +121,7 @@ object Smb {
             }
             val m = c.message ?: ""
             if ("dialect" in m.lowercase() || "negotiat" in m.lowercase() || "SMBv1" in m)
-                return "Bu cihaz sadece eski SMB1 protokolünü destekliyor (eski modem/NAS). Perde SMB2/3 kullanır; cihaz ayarlarından SMB2'yi aç."
+                return "Bu cihaz sadece eski SMB1 protokolünü destekliyor (eski modem/NAS). Kadraj SMB2/3 kullanır; cihaz ayarlarından SMB2'yi aç."
             c = c.cause
         }
         return "Bağlanılamadı: ${e.message ?: e.javaClass.simpleName}"

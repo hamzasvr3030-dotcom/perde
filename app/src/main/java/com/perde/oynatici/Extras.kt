@@ -58,7 +58,7 @@ object Updater {
     suspend fun check(): Rel? = withContext(Dispatchers.IO) {
         try {
             val c = URL("https://api.github.com/repos/$REPO/releases/latest").openConnection() as HttpURLConnection
-            c.setRequestProperty("Accept", "application/vnd.github+json"); c.setRequestProperty("User-Agent", "Perde")
+            c.setRequestProperty("Accept", "application/vnd.github+json"); c.setRequestProperty("User-Agent", "Kadraj")
             c.connectTimeout = 8000; c.readTimeout = 8000
             if (c.responseCode != 200) return@withContext null
             val o = JSONObject(c.inputStream.bufferedReader().readText())
@@ -71,9 +71,9 @@ object Updater {
 
     suspend fun download(ctx: Context, r: Rel, progress: (Float) -> Unit): File? = withContext(Dispatchers.IO) {
         try {
-            val f = File(ctx.cacheDir, "update/Perde-${r.version}.apk"); f.parentFile?.mkdirs()
+            val f = File(ctx.cacheDir, "update/Kadraj-${r.version}.apk"); f.parentFile?.mkdirs()
             var c = URL(r.apkUrl).openConnection() as HttpURLConnection
-            c.instanceFollowRedirects = true; c.setRequestProperty("User-Agent", "Perde")
+            c.instanceFollowRedirects = true; c.setRequestProperty("User-Agent", "Kadraj")
             var hops = 0
             while (c.responseCode in 300..399 && hops++ < 5) { val loc = c.getHeaderField("Location"); c.disconnect(); c = URL(loc).openConnection() as HttpURLConnection }
             val total = c.contentLengthLong.takeIf { it > 0 } ?: r.size
@@ -120,7 +120,7 @@ class PerdeWidget : AppWidgetProvider() {
             val p = Engine.player
             val active = p != null && p.mediaItemCount > 0
             val title = if (active) NowState.title else Prefs.lastTitle
-            v.setTextViewText(R.id.w_title, title.ifEmpty { "Perde" })
+            v.setTextViewText(R.id.w_title, title.ifEmpty { "Kadraj" })
             v.setTextViewText(R.id.w_sub, when {
                 active && NowState.isMusic -> NowState.artist.ifEmpty { "Müzik" }
                 active -> if (p?.isPlaying == true) "Oynatılıyor" else "Duraklatıldı"
@@ -354,7 +354,7 @@ class GifEncoder(out: OutputStream, private val w: Int, private val h: Int, priv
 // ============================ Medya araçları ============================
 object MediaTools {
     private fun stamp() = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.ROOT).format(Date())
-    fun picturesDir(): File = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Perde").apply { mkdirs() }
+    fun picturesDir(): File = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Kadraj").apply { mkdirs() }
 
     fun saveImage(ctx: Context, b: Bitmap, base: String): File? = try {
         val f = Library.unique(picturesDir(), "${base.take(40)}_${stamp()}.jpg")
@@ -422,7 +422,7 @@ object OpenSubs {
         val c = URL(API + path).openConnection() as HttpURLConnection
         c.requestMethod = method
         c.setRequestProperty("Api-Key", Prefs.osKey.trim())
-        c.setRequestProperty("User-Agent", "Perde v1.1")
+        c.setRequestProperty("User-Agent", "Kadraj v1.1")
         c.setRequestProperty("Accept", "application/json")
         c.connectTimeout = 10000; c.readTimeout = 15000
         token?.let { c.setRequestProperty("Authorization", "Bearer $it") }

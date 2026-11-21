@@ -163,7 +163,7 @@ object Downloads {
     }
 
     fun outDir(audio: Boolean): File =
-        File(Environment.getExternalStoragePublicDirectory(if (audio) Environment.DIRECTORY_MUSIC else Environment.DIRECTORY_MOVIES), "Perde").apply { mkdirs() }
+        File(Environment.getExternalStoragePublicDirectory(if (audio) Environment.DIRECTORY_MUSIC else Environment.DIRECTORY_MOVIES), "Kadraj").apply { mkdirs() }
 
     /** Asıl indirme işi (servisin iş parçacığında çalışır). */
     fun run(ctx: Context, d: DL, onProgress: () -> Unit) {
@@ -193,7 +193,7 @@ object Downloads {
             if (path != null) {
                 Library.scan(ctx, path)
                 d.file = path; d.progress = 1f; d.state = 2; d.info = "İndirildi · ${fmtSize(File(path).length())}"
-            } else { d.state = 2; d.progress = 1f; d.info = "İndirildi (Filmler/Perde)" }
+            } else { d.state = 2; d.progress = 1f; d.info = "İndirildi (Filmler/Kadraj)" }
         } catch (e: YoutubeDL.CanceledException) {
             d.state = 4; d.info = "İptal edildi"
         } catch (e: Exception) {
@@ -215,7 +215,7 @@ class DownloadService : Service() {
         if (Build.VERSION.SDK_INT >= 26) nm.createNotificationChannel(NotificationChannel("dl", "İndirmeler", NotificationManager.IMPORTANCE_LOW))
         val open = PendingIntent.getActivity(this, 7, Intent(this, MainActivity::class.java).putExtra("openDownloads", true)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE)
-        return NotificationCompat.Builder(this, "dl").setSmallIcon(R.drawable.ic_download).setContentTitle("Perde · İndiriliyor")
+        return NotificationCompat.Builder(this, "dl").setSmallIcon(R.drawable.ic_download).setContentTitle("Kadraj · İndiriliyor")
             .setContentText(text).setOnlyAlertOnce(true).setOngoing(true).setContentIntent(open)
             .apply { if (progress != null) setProgress(100, (progress * 100).toInt(), progress <= 0f) }.build()
     }

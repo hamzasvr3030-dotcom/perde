@@ -336,7 +336,7 @@ fun TransferScreen(back: () -> Unit) {
                 Text("http://$ip:${LocalServer.PORT}", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Accent,
                     modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(Surf2).padding(horizontal = 18.dp, vertical = 14.dp))
                 Spacer(Modifier.height(16.dp))
-                Text("• Açılan sayfadan videoları telefona yükleyebilir (Filmler/Perde klasörüne kaydedilir) ya da telefondaki videoları indirebilirsin.\n• İki cihaz aynı Wi-Fi ağında olmalı.\n• Bu ekrandan çıkınca aktarım kapanır.",
+                Text("• Açılan sayfadan videoları telefona yükleyebilir (Filmler/Kadraj klasörüne kaydedilir) ya da telefondaki videoları indirebilirsin.\n• İki cihaz aynı Wi-Fi ağında olmalı.\n• Bu ekrandan çıkınca aktarım kapanır.",
                     fontSize = 14.sp, color = Muted)
             }
             if (uploaded.isNotEmpty()) {
@@ -429,7 +429,7 @@ fun MoreScreen(vm: LibVM, go: (Route) -> Unit) {
                 SetSwitch("Izgara görünümü", null, Prefs.grid) { Prefs.grid = it }
 
                 SetHeader("Hakkında")
-                ListItem(headlineContent = { Text("Perde ${Updater.current(ctx)}") }, supportingContent = { Text("Kişisel video ve müzik oynatıcı · Media3 (ExoPlayer) + FFmpeg") },
+                ListItem(headlineContent = { Text("Kadraj ${Updater.current(ctx)}") }, supportingContent = { Text("Kişisel video ve müzik oynatıcı · Media3 (ExoPlayer) + FFmpeg") },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent))
                 ListItem(headlineContent = { Text("İzleme geçmişini temizle") }, supportingContent = { Text("Kaldığı yer bilgileri ve ilerleme çubukları sıfırlanır") },
                     modifier = Modifier.clickable {
@@ -674,7 +674,7 @@ fun PrivateScreen(vm: LibVM, back: () -> Unit) {
             text = { Text("Bu dosyayla ne yapmak istiyorsun?") },
             confirmButton = { TextButton(onClick = {
                 sel = null
-                scope.launch { val ok = withContext(Dispatchers.IO) { Library.restoreFromPrivate(ctx, File(v.path)) }; toast(ctx, if (ok) "Filmler/Perde klasörüne taşındı" else "Taşınamadı"); load(); vm.reload() }
+                scope.launch { val ok = withContext(Dispatchers.IO) { Library.restoreFromPrivate(ctx, File(v.path)) }; toast(ctx, if (ok) "Filmler/Kadraj klasörüne taşındı" else "Taşınamadı"); load(); vm.reload() }
             }) { Text("Geri taşı") } },
             dismissButton = { Row {
                 TextButton(onClick = { File(v.path).delete(); Prefs.forget(v.key); sel = null; load() }) { Text("Sil", color = Color(0xFFFF6B6B)) }

@@ -1,6 +1,6 @@
 <resources>
     <color name="bg">#0E0F13</color>
-    <color name="ic_bg">#16121F</color>
+    <color name="ic_bg">#121318</color>
     <style name="Theme.Perde" parent="Theme.AppCompat.NoActionBar">
         <item name="android:windowBackground">@color/bg</item>
         <item name="colorPrimary">#FF7A45</item>

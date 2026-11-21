@@ -198,7 +198,7 @@ fun HomeScreen(vm: LibVM, go: (Route) -> Unit) {
                     Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(Brush.linearGradient(listOf(AccentSoft, Accent))), contentAlignment = Alignment.Center) {
                         Icon(Icons.Filled.PlayArrow, null, tint = Color(0xFF14100E))
                     }
-                    Text("Perde", fontWeight = FontWeight.Black, fontSize = 24.sp, modifier = Modifier.padding(start = 10.dp))
+                    Text("Kadraj", fontWeight = FontWeight.Black, fontSize = 24.sp, modifier = Modifier.padding(start = 10.dp))
                 }
             },
             actions = {
@@ -376,7 +376,7 @@ private fun FolderActions(f: Folder, vm: LibVM, dismiss: () -> Unit, open: () ->
             }) { Text("Sil", color = Color(0xFFFF6B6B)) } },
             dismissButton = { TextButton(onClick = dismiss) { Text("Vazgeç") } })
         3 -> AlertDialog(onDismissRequest = dismiss, title = { Text("Gizli klasöre taşınsın mı?") },
-            text = { Text("${f.videos.size} video galeriden gizlenir; sadece Perde'deki şifreli Gizli klasörde görünür.\n\nDikkat: Perde kaldırılırsa gizli videolar da silinir.") },
+            text = { Text("${f.videos.size} video galeriden gizlenir; sadece Kadraj'daki şifreli Gizli klasörde görünür.\n\nDikkat: Kadraj kaldırılırsa gizli videolar da silinir.") },
             confirmButton = { TextButton(onClick = {
                 scope.launch { val n = withContext(Dispatchers.IO) { f.videos.count { Library.moveToPrivate(ctx, it.path, it.uri) } }; toast(ctx, "$n video taşındı"); vm.reload() }
                 dismiss()
@@ -450,7 +450,7 @@ fun VideoActions(v: Video, vm: LibVM, dismiss: () -> Unit, play: () -> Unit) {
                 }
             })
         4 -> AlertDialog(onDismissRequest = dismiss, title = { Text("Gizli klasöre taşınsın mı?") },
-            text = { Text("Video galeriden ve diğer uygulamalardan gizlenir, sadece Perde'deki şifreli Gizli klasörde görünür.\n\nDikkat: Perde kaldırılırsa gizli videolar da silinir.") },
+            text = { Text("Video galeriden ve diğer uygulamalardan gizlenir, sadece Kadraj'daki şifreli Gizli klasörde görünür.\n\nDikkat: Kadraj kaldırılırsa gizli videolar da silinir.") },
             confirmButton = { TextButton(onClick = { bg({ Library.moveToPrivate(ctx, v.path, v.uri) }, "Gizli klasöre taşındı", "Taşınamadı") }) { Text("Taşı") } },
             dismissButton = { TextButton(onClick = dismiss) { Text("Vazgeç") } })
         5 -> PlaylistPickerDialog(listOf(v.key), dismiss)
@@ -475,7 +475,7 @@ fun FolderPickerDialog(vm: LibVM, title: String, dismiss: () -> Unit, pick: (Fil
                         pick(File(Library.publicDir().parentFile, newName.trim()))
                     }) { Icon(Icons.Filled.CreateNewFolder, "Oluştur") } })
                 Spacer(Modifier.height(8.dp))
-                ListItem(headlineContent = { Text("Filmler/Perde") }, leadingContent = { Icon(Icons.Filled.Folder, null, tint = Accent) },
+                ListItem(headlineContent = { Text("Filmler/Kadraj") }, leadingContent = { Icon(Icons.Filled.Folder, null, tint = Accent) },
                     modifier = Modifier.clickable { pick(Library.publicDir()) }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
                 folders.forEach { f ->
                     ListItem(headlineContent = { Text(f.name) }, supportingContent = { Text(f.path, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 11.sp) },
@@ -576,7 +576,7 @@ fun VideoList(videos: List<Video>, vm: LibVM, title: String, back: () -> Unit, e
             scope.launch { val n = withContext(Dispatchers.IO) { Library.transfer(ctx, paths, dir, copy) }; toast(ctx, "$n video ${if (copy) "kopyalandı" else "taşındı"}"); vm.reload() }
         }
         4 -> AlertDialog(onDismissRequest = { dialog = 0 }, title = { Text("${picked.size} video gizli klasöre taşınsın mı?") },
-            text = { Text("Dikkat: Perde kaldırılırsa gizli videolar da silinir.") },
+            text = { Text("Dikkat: Kadraj kaldırılırsa gizli videolar da silinir.") },
             confirmButton = { TextButton(onClick = {
                 val l = pickedVideos(); close()
                 scope.launch { val n = withContext(Dispatchers.IO) { l.count { Library.moveToPrivate(ctx, it.path, it.uri) } }; toast(ctx, "$n video taşındı"); vm.reload() }

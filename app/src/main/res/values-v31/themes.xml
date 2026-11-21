@@ -1,0 +1,16 @@
+<resources>
+    <style name="Theme.Perde" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="colorPrimary">#FF7A45</item>
+        <item name="colorAccent">#FF7A45</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <!-- sistem açılış ekranında simge gösterme: uygulama doğrudan açılsın -->
+        <item name="android:windowSplashScreenBackground">@color/bg</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@android:color/transparent</item>
+        <item name="android:windowSplashScreenAnimationDuration">0</item>
+    </style>
+    <style name="Theme.Perde.Player">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+</resources>

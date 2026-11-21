@@ -38,7 +38,7 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <intent-filter android:label="Perde ile oynat / indir">
+            <intent-filter android:label="Kadraj ile oynat / indir">
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
@@ -104,7 +104,7 @@
         <receiver
             android:name=".PerdeWidget"
             android:exported="true"
-            android:label="Perde">
+            android:label="Kadraj">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>

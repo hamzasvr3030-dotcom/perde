@@ -94,7 +94,6 @@ object AppState {
     var update by mutableStateOf<Updater.Rel?>(null)
     var sharedUrl by mutableStateOf<String?>(null)
     var openNet by mutableIntStateOf(0)
-    var splashDone = false
 }
 
 class LibVM(app: Application) : AndroidViewModel(app) {
@@ -157,7 +156,6 @@ fun MainApp() {
     val ctx = LocalContext.current
     val vm: LibVM = viewModel()
     var granted by remember { mutableStateOf(hasStorage(ctx)) }
-    var splash by remember { mutableStateOf(!AppState.splashDone) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         granted = hasStorage(ctx)
         if (granted) vm.reload()
@@ -178,7 +176,6 @@ fun MainApp() {
         else Shell(vm)
     }
     AppState.update?.let { UpdateDialog(it) { AppState.update = null } }
-    if (splash) SplashOverlay { splash = false; AppState.splashDone = true }
 }
 
 @Composable
@@ -266,9 +263,9 @@ private fun PermissionScreen(onResult: () -> Unit) {
         verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(Icons.Filled.VideoLibrary, null, tint = Accent, modifier = Modifier.size(80.dp))
         Spacer(Modifier.height(16.dp))
-        Text("Perde'ye hoş geldin", fontSize = 26.sp, fontWeight = FontWeight.Bold)
+        Text("Kadraj'a hoş geldin", fontSize = 26.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(10.dp))
-        Text("Videolarını ve müziklerini bulmak, altyazı dosyalarını okumak ve dosyaları düzenleyebilmek için dosya erişim izni gerekiyor. Açılan ekranda \"Perde\" için izni aç, sonra geri dön.",
+        Text("Videolarını ve müziklerini bulmak, altyazı dosyalarını okumak ve dosyaları düzenleyebilmek için dosya erişim izni gerekiyor. Açılan ekranda \"Kadraj\" için izni aç, sonra geri dön.",
             textAlign = TextAlign.Center, color = Muted)
         Spacer(Modifier.height(28.dp))
         Button(onClick = {
@@ -277,50 +274,6 @@ private fun PermissionScreen(onResult: () -> Unit) {
                 catch (_: Exception) { ctx.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
             } else legacy.launch(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE))
         }, modifier = Modifier.height(52.dp).widthIn(min = 220.dp)) { Text("İzin ver", fontSize = 16.sp) }
-    }
-}
-
-/** Açılış: perde iki yana açılır, ortada oynat simgesi belirir. */
-@Composable
-private fun SplashOverlay(done: () -> Unit) {
-    val open = remember { Animatable(0f) }
-    val fade = remember { Animatable(1f) }
-    LaunchedEffect(Unit) {
-        delay(150)
-        open.animateTo(1f, tween(900, easing = FastOutSlowInEasing))
-        fade.animateTo(0f, tween(260))
-        done()
-    }
-    val accent = Accent
-    Box(Modifier.fillMaxSize().alpha(fade.value).background(Color(0xFF0B0B0E)), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.scale(0.7f + 0.3f * open.value).alpha(open.value)) {
-            Icon(Icons.Filled.PlayCircle, null, tint = accent, modifier = Modifier.size(96.dp))
-            Spacer(Modifier.height(10.dp))
-            Text("Perde", fontSize = 36.sp, fontWeight = FontWeight.Black, color = Color.White, letterSpacing = 2.sp)
-            Text("video · müzik", color = Muted, fontSize = 14.sp)
-        }
-        Canvas(Modifier.fillMaxSize()) {
-            val half = size.width / 2
-            val shift = half * open.value
-            for (side in listOf(-1, 1)) {
-                val left = if (side < 0) -shift else half + shift
-                val dark = lerp(accent, Color.Black, 0.55f); val mid = lerp(accent, Color.Black, 0.3f)
-                drawRect(Brush.horizontalGradient(listOf(dark, mid, dark, mid, dark), startX = left, endX = left + half), Offset(left, 0f), Size(half, size.height))
-                // kıvrım çizgileri
-                for (k in 1..5) {
-                    val x = left + half * k / 6
-                    drawLine(Color.Black.copy(alpha = 0.25f), Offset(x, 0f), Offset(x, size.height), strokeWidth = 3f)
-                }
-            }
-            // üst saçak
-            val p = Path().apply {
-                moveTo(0f, 0f); lineTo(size.width, 0f); lineTo(size.width, 70f)
-                var x = size.width
-                while (x > 0) { quadraticTo(x - 30f, 100f, x - 60f, 70f); x -= 60f }
-                close()
-            }
-            drawPath(p, lerp(accent, Color.White, 0.25f))
-        }
     }
 }
 

@@ -123,13 +123,13 @@ class LocalServer(private val ctx: Context) : NanoHTTPD(PORT) {
             "<tr><td><a href=\"/d?k=${URLEncoder.encode(v.path, "UTF-8")}\">${esc(v.title)}</a></td><td>${esc(File(v.folder).name)}</td><td>${fmtTime(v.duration)}</td><td>${fmtSize(v.size)}</td></tr>"
         }
         return """<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Perde · Wi-Fi Aktarım</title><style>
+<title>Kadraj · Wi-Fi Aktarım</title><style>
 body{font-family:system-ui,sans-serif;background:#0e0f13;color:#eee;margin:0;padding:20px;max-width:960px;margin:auto}
 h1{color:#ff7a45;margin:0 0 4px}p{color:#aaa}.box{border:2px dashed #ff7a45;border-radius:14px;padding:26px;text-align:center;margin:18px 0}
 button{background:#ff7a45;color:#111;border:0;border-radius:10px;padding:12px 22px;font-weight:700;font-size:16px;cursor:pointer}
 table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:8px;border-bottom:1px solid #2a2d36;text-align:left}a{color:#ffb38f}
 #log div{padding:4px 0;color:#9fd}input[type=search]{width:100%;padding:10px;border-radius:10px;border:1px solid #333;background:#17191f;color:#eee;margin:10px 0}
-</style></head><body><h1>Perde · Wi-Fi Aktarım</h1><p>Telefona video göndermek için dosyaları seç ya da buraya sürükle. Yüklenenler <b>Filmler/Perde</b> klasörüne kaydedilir.</p>
+</style></head><body><h1>Kadraj · Wi-Fi Aktarım</h1><p>Telefona video göndermek için dosyaları seç ya da buraya sürükle. Yüklenenler <b>Filmler/Kadraj</b> klasörüne kaydedilir.</p>
 <div class="box" id="drop"><input type="file" id="f" multiple accept="video/*,.srt,.ass,.vtt" style="display:none">
 <button onclick="document.getElementById('f').click()">Dosya seç</button><p>veya dosyaları buraya bırak</p><div id="log"></div></div>
 <h2>Telefondaki videolar (${vids.size})</h2><input type="search" placeholder="Ara..." oninput="q(this.value)">

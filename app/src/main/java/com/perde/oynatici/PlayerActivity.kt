@@ -646,7 +646,7 @@ class PlayerActivity : AppCompatActivity() {
             PixelCopy.request(sv, bmp, { r ->
                 if (r == PixelCopy.SUCCESS) lifecycleScope.launch {
                     val f = withContext(Dispatchers.IO) { MediaTools.saveImage(this@PlayerActivity, bmp, cleanTitle(ui.title)) }
-                    toast(if (f != null) "Kaydedildi: Resimler/Perde" else "Kaydedilemedi")
+                    toast(if (f != null) "Kaydedildi: Resimler/Kadraj" else "Kaydedilemedi")
                 } else toast("Ekran görüntüsü alınamadı (korumalı içerik olabilir)")
             }, Handler(mainLooper))
         } catch (_: Exception) { toast("Ekran görüntüsü alınamadı") }
@@ -659,7 +659,7 @@ class PlayerActivity : AppCompatActivity() {
         ui.sheet = null; ui.busy = "Video kesiliyor"; ui.busyProgress = 0f
         MediaTools.trim(this, k, start, end, { ui.busyProgress = it / 100f }) { f, err ->
             ui.busy = null
-            toast(if (f != null) "Kaydedildi: Filmler/Perde/${f.name}" else "Kesilemedi: ${err ?: "bilinmeyen hata"}")
+            toast(if (f != null) "Kaydedildi: Filmler/Kadraj/${f.name}" else "Kesilemedi: ${err ?: "bilinmeyen hata"}")
         }
     }
 
@@ -671,7 +671,7 @@ class PlayerActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val f = MediaTools.gif(this@PlayerActivity, k, start, end) { ui.busyProgress = it }
             ui.busy = null
-            toast(if (f != null) "GIF kaydedildi: Resimler/Perde" else "GIF yapılamadı")
+            toast(if (f != null) "GIF kaydedildi: Resimler/Kadraj" else "GIF yapılamadı")
         }
     }
 

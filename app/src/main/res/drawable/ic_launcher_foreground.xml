@@ -1,17 +1,7 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-    <!-- sahne ışığı -->
-    <path android:fillColor="#33FFB38F" android:pathData="M54,36 L76,80 L32,80 Z" />
-    <!-- sol perde (kıvrımlı) -->
-    <path android:fillColor="#C9431F" android:pathData="M26,28 L46,28 C42,44 40,58 44,80 L26,80 Z" />
-    <path android:fillColor="#FF7A45" android:pathData="M26,28 L36,28 C33,44 32,60 34,80 L26,80 Z" />
-    <path android:fillColor="#E85A2C" android:pathData="M36,28 L41,28 C38,44 37,60 39,80 L34,80 C32,60 33,44 36,28 Z" />
-    <!-- sağ perde -->
-    <path android:fillColor="#C9431F" android:pathData="M82,28 L62,28 C66,44 68,58 64,80 L82,80 Z" />
-    <path android:fillColor="#FF7A45" android:pathData="M82,28 L72,28 C75,44 76,60 74,80 L82,80 Z" />
-    <path android:fillColor="#E85A2C" android:pathData="M72,28 L67,28 C70,44 71,60 69,80 L74,80 C76,60 75,44 72,28 Z" />
-    <!-- üst saçak -->
-    <path android:fillColor="#FFB38F" android:pathData="M24,24 L84,24 L84,31 Q79,35 74,31 Q69,35 64,31 Q59,35 54,31 Q49,35 44,31 Q39,35 34,31 Q29,35 24,31 Z" />
-    <!-- oynat -->
-    <path android:fillColor="#FFF3E8" android:pathData="M49,47 L63,56 L49,65 Z" />
+    <!-- Kadraj: vizör köşeleri + oynat -->
+    <path android:fillColor="#00000000" android:strokeColor="#FF7A45" android:strokeWidth="5" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M30,42 L30,32 Q30,30 32,30 L42,30 M66,30 L76,30 Q78,30 78,32 L78,42 M78,66 L78,76 Q78,78 76,78 L66,78 M42,78 L32,78 Q30,78 30,76 L30,66" />
+    <path android:fillColor="#FFD3B8" android:pathData="M47,42.5 Q47,40 49.2,41.3 L65,51.6 Q67,53 65,54.4 L49.2,64.7 Q47,66 47,63.5 Z" />
 </vector>

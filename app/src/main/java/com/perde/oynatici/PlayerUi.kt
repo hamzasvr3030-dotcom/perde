@@ -785,7 +785,7 @@ private fun MoreSheet(a: PlayerActivity) {
 @Composable
 fun DownloadQualityContent(pick: (Int) -> Unit) {
     SheetTitle("İndir")
-    Text("Videolar Filmler/Perde, sesler Müzik/Perde klasörüne kaydedilir.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp))
+    Text("Videolar Filmler/Kadraj, sesler Müzik/Kadraj klasörüne kaydedilir.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp))
     Downloads.QUALITIES.forEachIndexed { i, q ->
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable { pick(i) }.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(if (i == 3) Icons.Filled.MusicNote else Icons.Filled.Movie, null, tint = Accent)
@@ -824,7 +824,7 @@ private fun ClipSheet(a: PlayerActivity) {
     OutlinedButton(onClick = { a.makeGif(range.start.toLong(), range.endInclusive.toLong()) }, enabled = len in 500..15_000, modifier = Modifier.fillMaxWidth()) {
         Icon(Icons.Filled.Gif, null); Spacer(Modifier.width(8.dp)); Text(if (len > 15_000) "GIF en fazla 15 saniye olabilir" else "GIF yap")
     }
-    Text("Kesitler Filmler/Perde, GIF'ler Resimler/Perde klasörüne kaydedilir.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+    Text("Kesitler Filmler/Kadraj, GIF'ler Resimler/Kadraj klasörüne kaydedilir.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
 }
 
 @Composable

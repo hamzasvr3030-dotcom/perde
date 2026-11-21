@@ -100,7 +100,39 @@ data class MediaMeta(
 object MetaNet {
     private fun file(ctx: Context, key: String) = File(File(ctx.filesDir, "meta").apply { mkdirs() }, md5(key) + ".json")
 
-    fun cached(ctx: Context, key: String): MediaMeta? = try {
+    private fun posterFile(ctx: Context, key: String) = File(File(ctx.filesDir, "posters").apply { mkdirs() }, md5(key) + ".jpg")
+
+    /** Afiş telefona inmişse yerel dosya yolunu kullan (internet gerekmez). */
+    private fun local(ctx: Context, key: String, m: MediaMeta): MediaMeta {
+        val f = posterFile(ctx, key)
+        return if (f.exists() && f.length() > 0) m.copy(poster = Uri.fromFile(f).toString()) else m
+    }
+
+    /** Afişi bir kere indirip kalıcı olarak saklar. */
+    fun savePoster(ctx: Context, key: String, url: String?): Boolean {
+        if (url == null || !url.startsWith("http")) return false
+        val f = posterFile(ctx, key)
+        if (f.exists() && f.length() > 0) return true
+        return try {
+            val c = URL(url).openConnection() as HttpURLConnection
+            c.connectTimeout = 8000; c.readTimeout = 15000; c.setRequestProperty("User-Agent", "Kadraj/1.4 (kisisel uygulama)")
+            if (c.responseCode != 200) return false
+            val tmp = File(f.path + ".part")
+            c.inputStream.use { i -> tmp.outputStream().use { o -> i.copyTo(o) } }
+            tmp.renameTo(f)
+        } catch (_: Exception) { false }
+    }
+
+    /** Daha önce bulunmuş ama afişi henüz inmemiş kayıtlar için. */
+    suspend fun ensurePoster(ctx: Context, key: String): Boolean = withContext(Dispatchers.IO) {
+        val raw = rawCached(ctx, key) ?: return@withContext false
+        val f = posterFile(ctx, key)
+        if (f.exists() && f.length() > 0) false else savePoster(ctx, key, raw.poster)
+    }
+
+    fun cached(ctx: Context, key: String): MediaMeta? = rawCached(ctx, key)?.let { local(ctx, key, it) }
+
+    private fun rawCached(ctx: Context, key: String): MediaMeta? = try {
         val f = file(ctx, key); if (!f.exists()) null else JSONObject(f.readText()).let { o ->
             if (o.optBoolean("none")) null else MediaMeta(o.getString("k"), o.getString("t"), o.optString("y").ifEmpty { null }, o.optString("s"),
                 o.optString("p").ifEmpty { null }, o.optString("g").ifEmpty { null }, o.optString("r").ifEmpty { null }, o.optString("e").ifEmpty { null })
@@ -115,7 +147,7 @@ object MetaNet {
         file(ctx, key).writeText(o.toString())
     }
 
-    fun forget(ctx: Context, key: String) { file(ctx, key).delete() }
+    fun forget(ctx: Context, key: String) { file(ctx, key).delete(); posterFile(ctx, key).delete() }
 
     private val SE = Regex("(?i)\\bS(\\d{1,2})\\s*E(\\d{1,3})\\b|\\b(\\d{1,2})x(\\d{2})\\b")
     private fun strip(h: String) = h.replace(Regex("<[^>]+>"), "").replace("&amp;", "&").replace("&quot;", "\"").trim()
@@ -124,7 +156,7 @@ object MetaNet {
         if (!force) { cached(ctx, key)?.let { return@withContext it }; if (triedBefore(ctx, key)) return@withContext null }
         val res = search(fileName)
         save(ctx, key, res)
-        res
+        res?.let { savePoster(ctx, key, it.poster); local(ctx, key, it) }
     }
 
     /** Dosya adından film/dizi bilgisi (önbelleksiz). */

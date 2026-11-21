@@ -11,8 +11,8 @@ android {
         applicationId = "com.perde.oynatici"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "1.4.0"
+        versionCode = 8
+        versionName = "1.4.1"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
@@ -70,6 +70,7 @@ dependencies {
 
     implementation("io.coil-kt.coil3:coil-compose:3.2.0")
     implementation("io.coil-kt.coil3:coil-video:3.2.0")
+    implementation("io.coil-kt.coil3:coil-network-okhttp:3.2.0")
 
     implementation("org.nanohttpd:nanohttpd:2.3.1")
     implementation("net.jthink:jaudiotagger:3.0.1")

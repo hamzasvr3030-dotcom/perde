@@ -209,6 +209,7 @@ fun FilmsRow(vm: LibVM, open: (Video) -> Unit, info: (Video) -> Unit) {
     LaunchedEffect(long) {
         if (!Prefs.autoMeta) return@LaunchedEffect
         long.filter { !MetaNet.triedBefore(ctx, it.key) }.take(12).forEach { v -> MetaNet.lookup(ctx, v.key, File(v.path).name); ver++ }
+        long.forEach { v -> if (MetaNet.ensurePoster(ctx, v.key)) ver++ }
     }
     val withMeta = remember(long, ver) { long.mapNotNull { v -> MetaNet.cached(ctx, v.key)?.let { v to it } } }
     if (withMeta.isEmpty()) return

@@ -424,7 +424,9 @@ private fun JobRow(j: Job, compact: Boolean = false) {
         Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
             Text(j.title, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium, fontSize = 14.sp)
             val sub = when (j.state) {
-                Job.RUN -> listOf("%${(j.progress * 100).toInt()}", j.phase, j.speed, j.eta).filter { it.isNotEmpty() }.joinToString(" · ")
+                Job.RUN -> listOf("%${(j.progress * 100).toInt()}",
+                    if (j.totalBytes > 0) "${fmtSize(j.gotBytes)} / ${if (j.totalExact) "" else "≈"}${fmtSize(j.totalBytes)}" else "",
+                    j.phase, j.speed, j.eta).filter { it.isNotEmpty() }.joinToString(" · ")
                 Job.ERR -> j.error ?: "Hata"
                 Job.DONE -> "İndirildi · ${j.opts.label}" + (j.file?.let { " · " + fmtSize(File(it).length()) } ?: "") + (if (j.timing.isNotEmpty()) "\n" + j.timing else "")
                 else -> j.phase

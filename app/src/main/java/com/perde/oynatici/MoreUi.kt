@@ -106,6 +106,7 @@ fun MoreScreen(vm: LibVM, go: (Route) -> Unit) {
                 GroupRow(Icons.Filled.Lock, "Gizli klasör", "PIN ve parmak iziyle korunur") { go(Route.Private) }
                 GroupRow(Icons.Filled.Delete, "Çöp kutusu", trailing = if (trashN > 0) "$trashN" else null) { go(Route.TrashR) }
                 GroupRow(Icons.Filled.BarChart, "İstatistikler") { go(Route.StatsR) }
+                GroupRow(Icons.Filled.CleaningServices, "Yer aç", "İzlediğin eski videoları sil") { go(Route.CleanupR) }
                 GroupRow(Icons.Filled.Storage, "Depolama analizi") { go(Route.StorageR) }
                 GroupRow(Icons.Filled.ContentCopy, "Kopya dosyalar") { go(Route.DupR) }
                 GroupRow(Icons.Filled.Slideshow, "Kısa videolar") { ctx.startActivity(android.content.Intent(ctx, ShortsActivity::class.java)) }
@@ -131,6 +132,7 @@ fun MoreScreen(vm: LibVM, go: (Route) -> Unit) {
             }
             Group("Uygulama") {
                 GroupRow(Icons.Filled.SystemUpdate, "Güncellemeleri denetle", if (checking) "Denetleniyor…" else "Sürüm ${Updater.current(ctx)}", chevron = !checking) { checkUpdate() }
+                GroupRow(Icons.Filled.BugReport, "Hata raporu", "Sorun olursa kopyalayıp gönder") { go(Route.ReportR) }
                 GroupRow(Icons.Filled.Info, "Uygulama hakkında", last = true) { go(Route.SettingsPage(6)) }
             }
         }
@@ -161,7 +163,8 @@ fun SettingsPage(vm: LibVM, section: Int, back: () -> Unit) {
                             GroupSwitch(Icons.Filled.PictureInPictureAlt, "Otomatik küçük pencere", "Ana ekrana çıkınca video küçük pencerede sürer", Prefs.autoPip) { Prefs.autoPip = it }
                             GroupSwitch(Icons.Filled.NightsStay, "Gece modu", "Yüksek sesleri kısar, konuşmaları yükseltir", Prefs.night) { Engine.setNight(it) }
                             GroupSwitch(Icons.Filled.VolumeUp, "Ses yükseltme (%200)", "Sağ tarafta yukarı kaydırınca", Prefs.boost) { Prefs.boost = it }
-                            GroupSwitch(Icons.Filled.Image, "Sarma önizlemesi", "Sararken o anın küçük resmi", Prefs.seekThumbs, last = true) { Prefs.seekThumbs = it }
+                            GroupSwitch(Icons.Filled.Image, "Sarma önizlemesi", "Sararken o anın küçük resmi", Prefs.seekThumbs) { Prefs.seekThumbs = it }
+                            GroupSwitch(Icons.Filled.Tune, "Ses ve parlaklığı hatırla", "Her video için en son ayarladığın değerler", Prefs.rememberLevels, last = true) { Prefs.rememberLevels = it }
                         }
                         Group("Dokunma hareketleri") {
                             GroupSwitch(Icons.Filled.BrightnessMedium, "Sol tarafta kaydır: parlaklık", null, Prefs.gBright) { Prefs.gBright = it }
@@ -177,7 +180,9 @@ fun SettingsPage(vm: LibVM, section: Int, back: () -> Unit) {
                     1 -> {
                         Group("Geçiş") {
                             SetChoice("Yumuşak geçiş", listOf("Kapalı", "2 sn", "4 sn", "6 sn", "8 sn", "12 sn"), listOf(0, 2, 4, 6, 8, 12).indexOf(Prefs.crossfade).coerceAtLeast(0)) { Prefs.crossfade = listOf(0, 2, 4, 6, 8, 12)[it]; ver++ }
-                            GroupSwitch(Icons.Filled.SkipNext, "Sessizliği atla", "Şarkı başı ve sonundaki sessizlik", Prefs.skipSilence, last = true) { Prefs.skipSilence = it; Engine.player?.skipSilenceEnabled = it }
+                            GroupSwitch(Icons.Filled.SkipNext, "Sessizliği atla", "Şarkı başı ve sonundaki sessizlik", Prefs.skipSilence) { Prefs.skipSilence = it; Engine.player?.skipSilenceEnabled = it }
+                            GroupSwitch(Icons.Filled.Headphones, "Kulaklık takınca devam et", "Kablolu ya da Bluetooth kulaklık bağlanınca son müzik sürer", Prefs.headsetResume) { Prefs.headsetResume = it }
+                            GroupSwitch(Icons.Filled.VolumeUp, "Şarkıya göre sesi hatırla", null, Prefs.rememberLevels, last = true) { Prefs.rememberLevels = it }
                         }
                         Group("Sözler ve ses") {
                             GroupSwitch(Icons.Filled.Lyrics, "İnternetten şarkı sözü", ".lrc yoksa LRCLIB'den bulunur", Prefs.onlineLyrics) { Prefs.onlineLyrics = it }

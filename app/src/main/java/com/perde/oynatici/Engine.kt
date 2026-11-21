@@ -80,6 +80,22 @@ object Engine {
         }
     }
 
+    private var lastMusicKey: String? = null
+
+    /** Son müzik kuyruğunu sakla (kulaklık takınca devam için) ve şarkıya göre ses seviyesini hatırla. */
+    private fun musicBookkeeping(p: ExoPlayer) {
+        val item = p.currentMediaItem ?: return
+        if (item.mediaMetadata.mediaType != androidx.media3.common.MediaMetadata.MEDIA_TYPE_MUSIC) return
+        LastQueue.save((0 until minOf(p.mediaItemCount, 500)).map { p.getMediaItemAt(it).mediaId }, p.currentMediaItemIndex, p.currentPosition)
+        val k = item.mediaId
+        if (k == lastMusicKey) return
+        val am = appCtx?.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager ?: return
+        val max = am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC).toFloat()
+        lastMusicKey?.let { Levels.saveVol(it, am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) / max) }
+        Levels.vol(k)?.let { v -> try { am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, Math.round(v.coerceIn(0f, 1f) * max), 0) } catch (_: Exception) { } }
+        lastMusicKey = k
+    }
+
     /** Müzikte şarkı sonunda sesi yavaşça kıs, yeni şarkıda yavaşça aç. */
     private fun fade(p: ExoPlayer) {
         val cf = Prefs.crossfade * 1000L
@@ -127,6 +143,7 @@ object Engine {
         p.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) { if (!isPlaying) { savePos(); Stats.flush() } else ensureEffects() }
             override fun onEvents(player: Player, events: Player.Events) {
+                if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_IS_PLAYING_CHANGED)) musicBookkeeping(p)
                 if (events.containsAny(Player.EVENT_IS_PLAYING_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_MEDIA_METADATA_CHANGED, Player.EVENT_TIMELINE_CHANGED)) {
                     NowState.refresh(); appCtx?.let { PerdeWidget.update(it); MusicWidget.update(it); PlayTile.request(it) }
                 }

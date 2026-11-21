@@ -88,6 +88,8 @@ sealed interface Route {
     data object StorageR : Route
     data object DupR : Route
     data class SettingsPage(val section: Int) : Route
+    data object CleanupR : Route
+    data object ReportR : Route
     data object SmbList : Route
     data class SmbBrowse(val server: SmbServer, val path: String) : Route
     data object Transfer : Route
@@ -115,10 +117,15 @@ class LibVM(app: Application) : AndroidViewModel(app) {
     var songs by mutableStateOf<List<Song>>(emptyList())
     var loading by mutableStateOf(false)
     var ver by mutableIntStateOf(0)
-    fun reload() {
+    fun reload(announce: Boolean = false) {
         viewModelScope.launch {
             loading = true
+            val oldV = videos.map { it.key }.toHashSet(); val oldS = songs.map { it.key }.toHashSet()
             val (v, s) = withContext(Dispatchers.IO) { Library.load(getApplication()) to Music.load(getApplication()) }
+            if (announce && (oldV.isNotEmpty() || oldS.isNotEmpty())) {
+                val nv = v.count { it.key !in oldV }; val ns = s.count { it.key !in oldS }
+                if (nv + ns > 0) toast(getApplication(), listOfNotNull(if (nv > 0) "$nv yeni video" else null, if (ns > 0) "$ns yeni şarkı" else null).joinToString(", ") + " eklendi")
+            }
             videos = v; songs = s
             loading = false; ver++
             RecentWidget.refresh(getApplication())
@@ -220,12 +227,14 @@ fun MainApp() {
         }
     }
     LaunchedEffect(Dl.doneTick) { if (Dl.doneTick > 0) { delay(1200); vm.reload() } }
+    LaunchedEffect(MediaWatch.tick) { if (MediaWatch.tick > 0) { delay(2500); vm.reload(announce = true) } }
     Surface(color = Bg, modifier = Modifier.fillMaxSize()) {
         if (!granted) PermissionScreen { granted = hasStorage(ctx); if (granted) vm.reload() }
         else Shell(vm)
     }
     AppState.update?.let { UpdateDialog(it) { AppState.update = null } }
     AppState.clipUrl?.let { u -> ClipDialog(u) }
+    CrashDialog()
 }
 
 @Composable
@@ -298,9 +307,11 @@ private fun Shell(vm: LibVM) {
                 Route.DlTab -> DownloadScreen(go)
                 Route.DlHistory -> DlHistoryScreen(back)
                 is Route.SmartList -> SmartListScreen(vm, r.type, back)
-                Route.StorageR -> StorageScreen(vm, back)
+                Route.StorageR -> StorageScreen(vm, back, go)
                 Route.DupR -> DupesScreen(vm, back)
                 is Route.SettingsPage -> SettingsPage(vm, r.section, back)
+                Route.CleanupR -> CleanupScreen(vm, back)
+                Route.ReportR -> ReportScreen(back)
                 Route.SmbList -> SmbListScreen(go, back)
                 is Route.SmbBrowse -> SmbBrowseScreen(r.server, r.path, go, back)
                 Route.Transfer -> TransferScreen(back)

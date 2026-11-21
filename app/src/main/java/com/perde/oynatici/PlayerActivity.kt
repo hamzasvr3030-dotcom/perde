@@ -225,6 +225,7 @@ class PlayerActivity : AppCompatActivity() {
             val k = curKey()
             if (k != null && Web.isPage(k) && !webRetried) { webRetried = true; loadWeb(k, fallback = true); return }
             ui.error = describe(error); ui.showControls = true
+            Report.log("oynatma", "${curKey()?.take(120)} → ${error.errorCodeName}: ${error.message}")
         }
         override fun onPlaybackStateChanged(playbackState: Int) {
             ui.buffering = playbackState == Player.STATE_BUFFERING
@@ -475,6 +476,9 @@ class PlayerActivity : AppCompatActivity() {
     private fun itemChanged() {
         val k = curKey() ?: return
         ui.key = k; ui.fav = Favs.has(k); ui.bmVer++
+        // bu video için en son kullanılan parlaklık ve ses
+        Levels.bright(k)?.let { b -> window.attributes = window.attributes.apply { screenBrightness = b.coerceIn(0.01f, 1f) } }
+        Levels.vol(k)?.let { v -> setVolume(v) }
         ui.chapters = emptyList()
         if (k.startsWith("/")) lifecycleScope.launch { ui.chapters = withContext(Dispatchers.IO) { Chapters.read(k) } }
         val ni = if (player.hasNextMediaItem()) player.getMediaItemAt(player.nextMediaItemIndex) else null
@@ -752,7 +756,8 @@ class PlayerActivity : AppCompatActivity() {
         if (b >= 0) return b
         return try { Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS) / 255f } catch (_: Exception) { 0.5f }
     }
-    fun vDragStart(isBright: Boolean) { dragStartVal = if (isBright) brightness() else volume() }
+    private var dragBright = false
+    fun vDragStart(isBright: Boolean) { dragBright = isBright; dragStartVal = if (isBright) brightness() else volume() }
     fun vDragUpdate(isBright: Boolean, delta: Float) {
         if (isBright) {
             val v = (dragStartVal + delta).coerceIn(0.01f, 1f)
@@ -764,7 +769,10 @@ class PlayerActivity : AppCompatActivity() {
             showInd(Ind("vol", txt, v / (if (Prefs.boost) 2f else 1f)))
         }
     }
-    fun vDragEnd() { showInd(ui.ind, 500) }
+    fun vDragEnd() {
+        showInd(ui.ind, 500)
+        curKey()?.let { k -> if (dragBright) Levels.saveBright(k, brightness()) else Levels.saveVol(k, volume()) }
+    }
 
     fun volume(): Float {
         val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)

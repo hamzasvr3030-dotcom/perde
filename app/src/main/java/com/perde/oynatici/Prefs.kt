@@ -67,6 +67,8 @@ object Prefs {
     var skipSilence by BoolP("skipSil", false)
     var onlineLyrics by BoolP("onLyr", true)
     var autoMeta by BoolP("autoMeta", false)
+    var headsetResume by BoolP("hsResume", true)
+    var rememberLevels by BoolP("remLevels", true)
 
     // Diğer
     var pinHash by StrP("pin", "")
@@ -93,7 +95,7 @@ object Prefs {
     fun subOff(k: String) = sp.getLong("so:$k", 0)
     fun setSubOff(k: String, v: Long) { sp.edit().putLong("so:$k", v).apply() }
 
-    private val PER_KEY = listOf("p:", "d:", "t:", "s:", "so:", "bm:", "sv:")
+    private val PER_KEY = listOf("p:", "d:", "t:", "s:", "so:", "bm:", "sv:", "pc:", "vol:", "br:")
     fun forget(k: String) { sp.edit().apply { PER_KEY.forEach { remove(it + k) } }.apply() }
 
     /** Dosya taşındığında/yeniden adlandırıldığında video bilgilerini yeni yola aktarır. */
@@ -105,6 +107,7 @@ object Prefs {
                 is Long -> e.putLong(p + new, v)
                 is String -> e.putString(p + new, v)
                 is Int -> e.putInt(p + new, v)
+                is Float -> e.putFloat(p + new, v)
                 else -> continue
             }
             e.remove(p + old)

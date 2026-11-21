@@ -37,7 +37,7 @@ import java.io.File
 
 // ---------------- depolama ----------------
 @Composable
-fun StorageScreen(vm: LibVM, back: () -> Unit) {
+fun StorageScreen(vm: LibVM, back: () -> Unit, go: (Route) -> Unit = {}) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var info by remember { mutableStateOf<StorageInfo?>(null) }
@@ -72,6 +72,7 @@ fun StorageScreen(vm: LibVM, back: () -> Unit) {
                     }
                 }
                 Row(Modifier.padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { go(Route.CleanupR) }) { Text("Yer aç") }
                     FilledTonalButton(onClick = { scope.launch(Dispatchers.IO) { StorageScan.clearCache(ctx) }.invokeOnCompletion { ver++ }; toast(ctx, "Önbellek temizlendi") }) { Text("Önbelleği temizle") }
                     if (i.trash > 0) FilledTonalButton(onClick = { scope.launch(Dispatchers.IO) { Trash.list(ctx).forEach { Trash.deleteForever(it) } }.invokeOnCompletion { ver++ }; toast(ctx, "Çöp boşaltıldı") }) { Text("Çöpü boşalt") }
                 }

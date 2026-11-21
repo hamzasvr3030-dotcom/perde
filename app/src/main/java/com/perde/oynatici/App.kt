@@ -15,6 +15,9 @@ class App : Application(), SingletonImageLoader.Factory {
         super.onCreate()
         Prefs.init(this)
         ThemeState.load()
+        Report.init(this)
+        MediaWatch.start(this)
+        Headset.start(this)
     }
 
     override fun newImageLoader(context: PlatformContext): ImageLoader =

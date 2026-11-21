@@ -92,6 +92,16 @@ class Job(
     // ilerleme hesabı
     var fileIdx = 0
     var lastRaw = 0f
+    // boyut takibi: kaç MB inecek, ne kadarı indi
+    var expectFiles = 1
+    var durSec = 0
+    @Volatile var expected = 0L      // yt-dlp'nin indirme öncesi bildirdiği toplam bayt
+    var curMax = 0L
+    var curSize = 0L
+    var doneBytes = 0L
+    var gotBytes by mutableStateOf(0L)
+    var totalBytes by mutableStateOf(0L)
+    var totalExact by mutableStateOf(false)
     // süre ölçümü: nerede zaman kaybediliyor?
     var tStart = 0L; var tFirst = 0L; var tDlEnd = 0L; var tEnd = 0L; var bytes = 0L
     var timing by mutableStateOf("")
@@ -312,6 +322,8 @@ object Dl {
 
     private fun finished(c: Context, j: Job) {
         j.phase = phaseText(j)
+        // geçici klasör: duraklatılan ya da internet kesilen iş kaldığı yerden sürsün diye silinmez
+        if (j.state != Job.PAUSED && !(j.state == Job.ERR && j.netErr)) try { File(c.cacheDir, "dl/${j.id}").deleteRecursively(); File(c.cacheDir, "dlsize_${j.id}.txt").delete() } catch (_: Exception) { }
         if (j.state == Job.DONE || j.state == Job.SKIP || j.state == Job.ERR) {
             history.add(0, HistItem(Web.idOf(j.url), j.title, j.url, j.file, j.opts.audio, System.currentTimeMillis(), j.state != Job.ERR,
                 if (j.state == Job.ERR) j.error ?: "Hata" else if (j.state == Job.SKIP) "Zaten indirilmişti" else j.opts.label))
@@ -350,25 +362,43 @@ object Dl {
 
     private val sizeRx = Regex("of\\s+~?\\s*([\\d.]+)\\s*([KMG]?)i?B")
 
+    private fun bytesOf(num: String, unit: String): Long {
+        val v = num.toDoubleOrNull() ?: return 0
+        return (v * when (unit) { "K" -> 1024.0; "M" -> 1048576.0; "G" -> 1073741824.0; else -> 1.0 }).toLong()
+    }
+
+    /**
+     * Yüzde, inen bayta göre hesaplanır ve asla geri gitmez:
+     *  - altyazı gibi küçük ek dosyalar sayılmaz,
+     *  - görüntü + ses ayrı iniyorsa ses için görüntünün ~%12'si kadar pay ayrılır, ses başlayınca gerçek boyut kullanılır,
+     *  - %97'den sonrası birleştirme/dönüştürme içindir.
+     */
     internal fun onProgress(j: Job, raw: Float, line: String) {
         if (raw < 0) return
         val now = System.currentTimeMillis()
+        val size = sizeRx.find(line)?.let { bytesOf(it.groupValues[1], it.groupValues[2]) } ?: 0L
+        // altyazı/kapak gibi küçük yardımcı dosyalar ilerlemeyi bozmasın
+        if (!j.opts.audio && size in 1 until 400_000) return
         if (j.tFirst == 0L) j.tFirst = now
-        if (raw >= 100f && (j.opts.audio || j.fileIdx >= 1 || j.tDlEnd == 0L)) j.tDlEnd = now
-        if (raw >= 100f) sizeRx.find(line)?.let { m ->
-            val v = m.groupValues[1].toFloatOrNull() ?: 0f
-            j.bytes += (v * when (m.groupValues[2]) { "K" -> 1024f; "M" -> 1048576f; "G" -> 1073741824f; else -> 1f }).toLong()
+        // inen bayt = yüzde × tahmini boyut (paralel parça modunda yüzde de boyut da zıplar, çarpımları düzgün artar)
+        val curGot = (size * (raw / 100f)).toLong()
+        if (j.curMax > 1_000_000 && curGot < j.curMax / 2) { j.doneBytes += j.curMax; j.fileIdx++; j.curMax = 0 }   // yeni dosyaya geçildi
+        if (curGot > j.curMax) j.curMax = curGot
+        if (size > 0) j.curSize = size
+        val last = j.fileIdx + 1 >= j.expectFiles
+        if (j.expected <= 0) {   // yedek: beklenen toplam bilinmiyorsa satırlardan tahmin
+            val rest = if (!last) (if (j.durSec > 0) j.durSec * 16_000L else (maxOf(j.curSize, j.curMax) * 0.12f).toLong()) else 0L
+            val total = j.doneBytes + maxOf(j.curSize, j.curMax) + rest
+            j.gotBytes = j.doneBytes + j.curMax; j.totalBytes = total; j.totalExact = false
+            val mapped = ((if (total > 0) j.gotBytes.toFloat() / total else raw / 100f) * 0.97f).coerceAtMost(0.97f)
+            if (mapped > j.progress) j.progress = mapped                     // asla geri gitmez
         }
-        if (raw < j.lastRaw - 30f) j.fileIdx++      // yeni dosyaya geçildi (görüntü → ses)
-        j.lastRaw = raw
-        val f = raw / 100f
-        val mapped = if (j.opts.audio) f * 0.92f else when (j.fileIdx) { 0 -> f * 0.80f; 1 -> 0.80f + f * 0.16f; else -> 0.96f }
-        if (mapped > j.progress) j.progress = mapped.coerceAtMost(0.99f)   // asla geri gitmez
-        j.phase = when {
-            raw >= 100f && (j.opts.audio || j.fileIdx >= 1) -> if (j.opts.audio) "Dönüştürülüyor…" else "Birleştiriliyor…"
+        if (j.expected <= 0 || j.progress < 0.96f) j.phase = when {
+            raw >= 100f && last -> if (j.opts.audio) "Dönüştürülüyor…" else if (j.expectFiles > 1) "Birleştiriliyor…" else "Kaydediliyor…"
             j.opts.audio -> "İndiriliyor"
-            j.fileIdx == 0 -> "Görüntü indiriliyor"
-            else -> "Ses indiriliyor"
+            j.expectFiles > 1 && j.fileIdx == 0 -> "Görüntü indiriliyor"
+            j.fileIdx >= 1 -> "Ses indiriliyor"
+            else -> "İndiriliyor"
         }
         speedRx.find(line)?.let { m ->
             val v = m.groupValues[1].toFloatOrNull() ?: 0f
@@ -376,15 +406,43 @@ object Dl {
             j.speed = if (mb >= 1f) String.format(Locale.forLanguageTag("tr"), "%.1f MB/sn", mb) else String.format(Locale.forLanguageTag("tr"), "%.0f KB/sn", mb * 1024)
         }
         j.eta = etaRx.find(line)?.groupValues?.get(1)?.let { "$it kaldı" } ?: ""
-        // YouTube yavaşlatıyorsa kullanıcıya söyle
         if (j.tFirst > 0 && now - j.tFirst > 20_000 && j.speed.endsWith("KB/sn") && (j.speed.substringBefore(' ').replace(',', '.').toFloatOrNull() ?: 999f) < 200f && "youtu" in j.url)
             j.phase += " · YouTube yavaşlatıyor"
-
     }
+
+    private fun dirSize(f: File): Long = if (f.isFile) f.length() else (f.listFiles() ?: emptyArray()).sumOf { dirSize(it) }
+
+    /** Asıl ilerleme: geçici klasörde diskte gerçekten inen bayt ÷ yt-dlp'nin bildirdiği toplam. */
+    private fun startDiskWatch(j: Job, tmp: File, sizeFile: File): () -> Unit {
+        val run = java.util.concurrent.atomic.AtomicBoolean(true)
+        Thread {
+            while (run.get()) {
+                if (j.expected <= 0) j.expected = try { sizeFile.readText().trim().lines().lastOrNull()?.trim()?.toLongOrNull() ?: 0L } catch (_: Exception) { 0L }
+                val e = j.expected
+                if (e > 0) {
+                    val got = dirSize(tmp)
+                    if (got > 0 && j.tFirst == 0L) j.tFirst = System.currentTimeMillis()
+                    j.gotBytes = minOf(got, e); j.totalBytes = e; j.totalExact = true
+                    val f = (got.toFloat() / e * 0.97f).coerceAtMost(0.97f)
+                    if (f > j.progress) j.progress = f                            // asla geri gitmez
+                    if (got >= e * 0.985) {
+                        if (j.tDlEnd == 0L) j.tDlEnd = System.currentTimeMillis()
+                        j.phase = if (j.opts.audio) "Dönüştürülüyor…" else if (j.expectFiles > 1) "Birleştiriliyor…" else "Kaydediliyor…"
+                    }
+                }
+                try { Thread.sleep(500) } catch (_: InterruptedException) { break }
+            }
+        }.start()
+        return { run.set(false) }
+    }
+
+    private fun tmpDir(c: Context, j: Job) = File(c.cacheDir, "dl/${j.id}")
+    private fun sizeFile(c: Context, j: Job) = File(c.cacheDir, "dlsize_${j.id}.txt")
 
     private fun build(c: Context, j: Job, subs: Boolean, pathFile: File): YoutubeDLRequest {
         val o = j.opts
-        val info = if (!j.url.startsWith("ytsearch")) Web.freshInfo(c, j.url) else null
+        val local = j.url.startsWith("file:")
+        val info = if (!j.url.startsWith("ytsearch") && !local) Web.freshInfo(c, j.url) else null
         val r = if (info != null) YoutubeDLRequest(emptyList<String>()).also { it.addOption("--load-info-json", info.absolutePath) } else YoutubeDLRequest(j.url)
         r.addOption("--no-playlist"); r.addOption("--no-mtime"); r.addOption("--newline"); r.addOption("--progress")
         r.addOption("--retries", "10"); r.addOption("--fragment-retries", "10"); r.addOption("--no-warnings")
@@ -394,9 +452,13 @@ object Dl {
             r.addOption("-N", "16"); r.addOption("--http-chunk-size", "10M")
         }
         listOf("", "1M", "2M", "5M").getOrElse(DlPrefs.rate) { "" }.takeIf { it.isNotEmpty() }?.let { r.addOption("-r", it) }
-        if (DlPrefs.archive) r.addOption("--download-archive", archiveFile(c).absolutePath)
+        if (local) r.addOption("--enable-file-urls")
+        if (DlPrefs.archive && !local) r.addOption("--download-archive", archiveFile(c).absolutePath)
         Web.addCookies(c, r)
         r.addCommands(listOf("--print-to-file", "after_move:filepath", pathFile.absolutePath))
+        r.addCommands(listOf("--print-to-file", "before_dl:%(filesize,filesize_approx)s", sizeFile(c, j).absolutePath))
+        // geçici dosyalar ayrı klasörde: ilerleme diskte inen bayttan ölçülür
+        r.addOption("-P", "home:" + j.dir); r.addOption("-P", "temp:" + tmpDir(c, j).apply { mkdirs() }.absolutePath)
         if (o.audio) {
             r.addOption("-f", "ba[ext=m4a]/ba/b")
             r.addOption("-x"); r.addOption("--audio-format", o.fmt); r.addOption("--audio-quality", "${o.kbps}K")
@@ -412,7 +474,7 @@ object Dl {
             }
             if (o.meta) { r.addOption("--embed-metadata"); r.addOption("--embed-thumbnail"); r.addOption("--convert-thumbnails", "jpg") }
             if (o.sponsor) r.addOption("--sponsorblock-remove", "sponsor,selfpromo,interaction,music_offtopic")
-            r.addOption("-o", j.dir + "/" + (if (o.smart || j.forceArtist != null) "%(artist,uploader)s - %(title).80B.%(ext)s" else "%(title).90B.%(ext)s"))
+            r.addOption("-o", if (o.smart || j.forceArtist != null) "%(artist,uploader)s - %(title).80B.%(ext)s" else "%(title).90B.%(ext)s")
         } else {
             val h = if (DlPrefs.smartQuality && !unmetered) minOf(o.height, DlPrefs.mobileHeight) else o.height
             val av1 = if (h > 1080) "" else "[vcodec!^=av01]"
@@ -422,7 +484,7 @@ object Dl {
             if (o.chapters) r.addOption("--embed-chapters")
             if (subs) { r.addOption("--write-subs"); r.addOption("--write-auto-subs"); r.addOption("--sub-langs", "tr,en"); r.addOption("--convert-subs", "srt") }
             if (o.sponsor) r.addOption("--sponsorblock-remove", "sponsor,selfpromo,interaction")
-            r.addOption("-o", j.dir + "/%(title).90B [%(id)s].%(ext)s")
+            r.addOption("-o", "%(title).90B [%(id)s].%(ext)s")
         }
         return r
     }
@@ -433,18 +495,29 @@ object Dl {
         try { Web.init(c) } catch (e: Exception) { j.state = Job.ERR; j.error = "İndirme motoru başlatılamadı"; return }
         val started = System.currentTimeMillis()
         j.tStart = started; j.tFirst = 0; j.tDlEnd = 0; j.bytes = 0; j.timing = ""
+        j.curSize = 0; j.curMax = 0; j.doneBytes = 0; j.gotBytes = 0; j.totalBytes = 0; j.fileIdx = 0; j.lastRaw = 0f
+        // kaç dosya inecek? ses: 1 · yerel dosya: 1 · YouTube videosu: görüntü + ses · diğer: analizden, yoksa 1
+        j.durSec = Web.freshInfo(c, j.url)?.let { f -> try { org.json.JSONObject(f.readText()).optDouble("duration", 0.0).toInt() } catch (_: Exception) { 0 } } ?: 0
+        j.expectFiles = when {
+            j.opts.audio || j.url.startsWith("file:") -> 1
+            "youtu" in j.url -> 2
+            else -> Web.freshInfo(c, j.url)?.let { f -> try { org.json.JSONObject(f.readText()).optJSONArray("requested_formats")?.length()?.coerceIn(1, 2) } catch (_: Exception) { null } } ?: 1
+        }
         val pathFile = File(c.cacheDir, "dlpath_${j.id}.txt").apply { delete() }
         var subs = j.opts.subs && !j.opts.audio
         var attempt = 0
         while (true) {
             attempt++
             var out = ""; var err: Exception? = null
+            j.expected = 0; sizeFile(c, j).delete()
+            val stopWatch = startDiskWatch(j, tmpDir(c, j), sizeFile(c, j))
             try {
                 val res = YoutubeDL.getInstance().execute(build(c, j, subs, pathFile), j.id) { p, _, line -> onProgress(j, p, line) }
                 out = res.out + "\n" + res.err
             } catch (e: YoutubeDL.CanceledException) {
-                j.state = if (j.pauseReq) Job.PAUSED else Job.CANCEL; j.pauseReq = false; return
+                stopWatch(); j.state = if (j.pauseReq) Job.PAUSED else Job.CANCEL; j.pauseReq = false; return
             } catch (e: Exception) { err = e; out = e.message ?: "" }
+            stopWatch()
 
             // sonuç dosyası
             var path = try { pathFile.readLines().map { it.trim() }.lastOrNull { it.isNotEmpty() && File(it).exists() } } catch (_: Exception) { null }
@@ -476,9 +549,9 @@ object Dl {
                 err != null -> {
                     j.netErr = Web.isNetworkError(out)
                     j.error = if (j.netErr) "Bağlantı koptu — internet gelince kendiliğinden devam edecek" else Web.explain(err)
-                    j.state = Job.ERR; return
+                    j.state = Job.ERR; Report.log("indirme", "${j.url} → ${out.lines().lastOrNull { "ERROR" in it } ?: err.message}"); return
                 }
-                else -> { j.state = Job.ERR; j.error = "Dosya bulunamadı"; return }
+                else -> { j.state = Job.ERR; j.error = "Dosya bulunamadı"; Report.log("indirme", "${j.url} → dosya bulunamadı"); return }
             }
         }
     }

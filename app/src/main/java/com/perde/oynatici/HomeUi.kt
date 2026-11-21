@@ -222,6 +222,7 @@ fun HomeScreen(vm: LibVM, go: (Route) -> Unit) {
                 if (vm.loading) CircularProgressIndicator(Modifier.align(Alignment.Center), color = Accent)
                 else Empty(Icons.Filled.VideoLibrary, "Telefonda video bulunamadı.\nAğ sekmesindeki Wi-Fi aktarım ile bilgisayardan video gönderebilirsin.")
             } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+                item { LowSpaceCard(vm, go) }
                 if (recent.isNotEmpty()) {
                     item { SectionHeader("İzlemeye devam et") }
                     item {
@@ -442,6 +443,7 @@ fun VideoActions(v: Video, vm: LibVM, dismiss: () -> Unit, play: () -> Unit) {
                 ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(v.mime ?: "video/*")
                     .putExtra(Intent.EXTRA_STREAM, v.uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Paylaş"))
             }
+            ActionItem(Icons.Filled.MusicNote, "Sesini müzik olarak kaydet (MP3/M4A)") { dialog = 9 }
             ActionItem(Icons.Filled.DriveFileMove, "Başka klasöre taşı") { dialog = 6 }
             ActionItem(Icons.Filled.FileCopy, "Başka klasöre kopyala") { dialog = 7 }
             ActionItem(Icons.Filled.Lock, "Gizli klasöre taşı") { dialog = 4 }
@@ -481,12 +483,26 @@ fun VideoActions(v: Video, vm: LibVM, dismiss: () -> Unit, play: () -> Unit) {
             confirmButton = { TextButton(onClick = { bg({ Library.moveToPrivate(ctx, v.path, v.uri) }, "Gizli klasöre taşındı", "Taşınamadı") }) { Text("Taşı") } },
             dismissButton = { TextButton(onClick = dismiss) { Text("Vazgeç") } })
         5 -> PlaylistPickerDialog(listOf(v.key), dismiss)
+        9 -> AlertDialog(onDismissRequest = dismiss, title = { Text("Sesini kaydet") },
+            text = { Text("\"${v.title}\" videosunun sesi Müzik/Kadraj klasörüne kaydedilir ve Müzik sekmesinde görünür.") },
+            confirmButton = { Row {
+                TextButton(onClick = { toAudio(ctx, v, "mp3"); dismiss() }) { Text("MP3") }
+                TextButton(onClick = { toAudio(ctx, v, "m4a"); dismiss() }) { Text("M4A (hızlı)") }
+            } },
+            dismissButton = { TextButton(onClick = dismiss) { Text("Vazgeç") } })
         6, 7 -> FolderPickerDialog(vm, if (dialog == 7) "Kopyalanacak klasör" else "Taşınacak klasör", dismiss) { dir ->
             val copy = dialog == 7
             toast(ctx, if (copy) "Kopyalanıyor…" else "Taşınıyor…")
             bg({ Library.transfer(ctx, listOf(v.path), dir, copy) > 0 }, if (copy) "Kopyalandı" else "Taşındı", "İşlem yapılamadı")
         }
     }
+}
+
+/** Videonun sesini indirme motoruyla (ffmpeg) müzik dosyasına çevirir. */
+fun toAudio(ctx: Context, v: Video, fmt: String) {
+    Dl.addSingles(ctx, listOf(Triple(Uri.fromFile(File(v.path)).toString(), v.title, null)),
+        DlOpts(audio = true, fmt = fmt, kbps = 192, subs = false, sponsor = false, chapters = false, meta = true, smart = false))
+    toast(ctx, "Dönüştürülüyor — İndir sekmesinden takip edebilirsin")
 }
 
 /** Taşıma/kopyalama için klasör seçici. */

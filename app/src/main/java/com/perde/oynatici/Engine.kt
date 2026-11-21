@@ -202,13 +202,14 @@ object Engine {
             .setMediaSourceFactory(DefaultMediaSourceFactory(AnyDataSource.Factory(app)))
             .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true)
             .setHandleAudioBecomingNoisy(true)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
         p.skipSilenceEnabled = false
         p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
             .setPreferredTextLanguage("tr").setPreferredAudioLanguage("tr")
             .setSelectUndeterminedTextLanguage(true).build()
         p.addListener(object : Player.Listener {
-            override fun onIsPlayingChanged(isPlaying: Boolean) { if (!isPlaying) { savePos(); Stats.flush() } else ensureEffects() }
+            override fun onIsPlayingChanged(isPlaying: Boolean) { if (!isPlaying) { savePos(); Stats.flush() } else { ensureEffects(); appCtx?.let { ServiceLink.ensure(it) } } }
             // bildirimden/kulaklıktan karıştırma açılırsa da listeyi gerçekten karıştır (sıra ekranında görünsün)
             override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) { if (shuffleModeEnabled) handler.post { setShuffle(true) } }
             override fun onEvents(player: Player, events: Player.Events) {
@@ -298,6 +299,8 @@ object Engine {
     /** Müzik çalmaya başla (video oynatıcıyla aynı motoru kullanır). */
     fun playSongs(ctx: Context, songs: List<Song>, index: Int, shuffle: Boolean = false) {
         if (songs.isEmpty()) return
+        savePos()          // yarım kalan video/şarkının yeri kaybolmasın
+        musicSnap = null
         audioOnly = false
         val p = get(ctx)
         p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, false).build()
@@ -310,6 +313,43 @@ object Engine {
         p.skipSilenceEnabled = Prefs.skipSilence
         p.prepare(); p.play()
         NowState.refresh()
+        ServiceLink.ensure(ctx)
+    }
+
+    // ---- video açılınca müzik sırası kaybolmasın ----
+    private class MusicSnap(val items: List<MediaItem>, val idx: Int, val pos: Long, val shuffled: Boolean, val orig: List<MediaItem>, val repeat: Int)
+    private var musicSnap: MusicSnap? = null
+    val hasMusicSnap get() = musicSnap != null
+
+    /** Video yüklenmeden hemen önce çağrılır: o an müzik varsa sırasını ve yerini saklar. */
+    fun snapMusic() {
+        val p = player ?: return
+        if (p.mediaItemCount == 0 || p.currentMediaItem?.mediaMetadata?.mediaType != androidx.media3.common.MediaMetadata.MEDIA_TYPE_MUSIC) return
+        savePos()
+        musicSnap = MusicSnap((0 until p.mediaItemCount).map { p.getMediaItemAt(it) }, p.currentMediaItemIndex, p.currentPosition.coerceAtLeast(0),
+            shuffled, origOrder, p.repeatMode)
+    }
+
+    /** Video kapanınca müziği kaldığı yerde, duraklatılmış olarak geri yükler. */
+    fun restoreMusic(ctx: Context): Boolean {
+        val s = musicSnap ?: return false
+        musicSnap = null
+        val p = get(ctx)
+        audioOnly = false
+        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, false).build()
+        p.pauseAtEndOfMediaItems = false
+        resetShuffle()
+        p.setMediaItems(s.items, s.idx.coerceIn(0, s.items.size - 1), s.pos)
+        shuffled = s.shuffled; origOrder = s.orig
+        p.repeatMode = s.repeat
+        p.setPlaybackSpeed(1f)
+        p.skipSilenceEnabled = Prefs.skipSilence
+        p.playWhenReady = false
+        p.prepare()
+        NowState.refresh()
+        ServiceLink.ensure(ctx)
+        appCtx?.let { PerdeWidget.update(it); MusicWidget.update(it) }
+        return true
     }
 
     fun setNight(on: Boolean) {
@@ -318,6 +358,7 @@ object Engine {
     }
 
     fun release() {
+        ServiceLink.drop()
         Stats.flush()
         savePos()
         handler.removeCallbacks(ticker)

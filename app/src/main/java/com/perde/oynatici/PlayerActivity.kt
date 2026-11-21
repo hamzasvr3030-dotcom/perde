@@ -382,6 +382,7 @@ class PlayerActivity : AppCompatActivity() {
         val saved = savedPos(keys[idx])
         val start = if (Prefs.resumeMode == 2) 0L else saved
         Engine.abA = -1; Engine.abB = -1; ui.abA = -1; ui.abB = -1
+        Engine.snapMusic()
         player.setMediaItems(items, idx, start)
         player.repeatMode = repeatModeOf(ui.repeat)
         Engine.resetShuffle()
@@ -1055,11 +1056,14 @@ class PlayerActivity : AppCompatActivity() {
         stopService(Intent(this, PlaybackService::class.java))
         player.removeListener(listener)
         Engine.release()
+        if (Engine.restoreMusic(applicationContext)) toast("Müziğin kaldığı yerde bekliyor")
         finish()
     }
 
     override fun onDestroy() {
         if (Engine.player === player) player.removeListener(listener)
+        // başka yoldan kapandıysa (PiP kapatma, video bitimi) müziği geri getir; arka planda ses olarak sürüyorsa dokunma
+        if (isFinishing && Engine.hasMusicSnap && !Engine.audioOnly && !ui.casting) Engine.restoreMusic(applicationContext)
         try { unregisterReceiver(pipReceiver) } catch (_: Exception) { }
         castCtx?.sessionManager?.removeSessionManagerListener(castListener, CastSession::class.java)
         controller?.let { MediaController.releaseFuture(it) }

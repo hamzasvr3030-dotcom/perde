@@ -250,6 +250,7 @@ fun MainApp() {
     AppState.update?.let { UpdateDialog(it) { AppState.update = null } }
     AppState.clipUrl?.let { u -> ClipDialog(u) }
     CrashDialog()
+    BgAskDialog()
     RingReq.song?.let { s -> RingtoneSheet(s) { RingReq.song = null } }
 }
 

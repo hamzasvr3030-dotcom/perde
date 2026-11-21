@@ -284,3 +284,56 @@ object StoryCard {
         }.start()
     }
 }
+
+// ============================ Arka planda kesilmesin ============================
+/** Müzik çalınca oynatma servisine bağlanır; böylece servis ön planda kalır, ekran kapanınca sistem müziği öldürmez. */
+object ServiceLink {
+    private var fut: com.google.common.util.concurrent.ListenableFuture<androidx.media3.session.MediaController>? = null
+    private var linked: androidx.media3.common.Player? = null
+
+    fun ensure(ctx: Context) {
+        val p = Engine.player ?: return
+        val f = fut
+        if (f != null && linked === p) {
+            if (!f.isDone) return
+            if (try { f.get().isConnected } catch (_: Exception) { false }) return
+        }
+        drop()
+        linked = p
+        val app = ctx.applicationContext
+        fut = androidx.media3.session.MediaController.Builder(app, androidx.media3.session.SessionToken(app, android.content.ComponentName(app, PlaybackService::class.java))).buildAsync()
+    }
+
+    fun drop() { fut?.let { androidx.media3.session.MediaController.releaseFuture(it) }; fut = null; linked = null }
+}
+
+object BgGuard {
+    fun ok(ctx: Context): Boolean = try { (ctx.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).isIgnoringBatteryOptimizations(ctx.packageName) } catch (_: Exception) { true }
+    val xiaomi get() = android.os.Build.MANUFACTURER.lowercase(Locale.ROOT).let { it.contains("xiaomi") || it.contains("redmi") || it.contains("poco") }
+
+    fun request(ctx: Context) {
+        try { ctx.startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${ctx.packageName}"))) }
+        catch (_: Exception) { try { ctx.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) } catch (_: Exception) { } }
+    }
+
+    fun autostart(ctx: Context) {
+        val tries = listOf(
+            Intent().setComponent(android.content.ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity")),
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${ctx.packageName}")))
+        for (i in tries) try { ctx.startActivity(i); return } catch (_: Exception) { }
+    }
+}
+
+@Composable
+fun BgAskDialog() {
+    val ctx = LocalContext.current
+    var show by remember { mutableStateOf(!Prefs.sp.getBoolean("bgAsked", false) && !BgGuard.ok(ctx)) }
+    if (!show) return
+    fun done() { Prefs.sp.edit().putBoolean("bgAsked", true).apply(); show = false }
+    AlertDialog(onDismissRequest = { done() }, icon = { Icon(Icons.Filled.BatteryChargingFull, null) },
+        title = { Text("Müzik ekran kapanınca kesilmesin") },
+        text = { Text("Telefon pil tasarrufu için arka planda çalan uygulamaları kapatabiliyor. Kadraj'ı pil kısıtlamasından çıkarırsan müzik ekran kapalıyken de kesilmez." +
+            if (BgGuard.xiaomi) "\n\nXiaomi'de ayrıca \"Otomatik başlatma\"yı da aç." else "") },
+        confirmButton = { TextButton(onClick = { done(); BgGuard.request(ctx); if (BgGuard.xiaomi) Handler(Looper.getMainLooper()).postDelayed({ BgGuard.autostart(ctx) }, 400) }) { Text("İzin ver") } },
+        dismissButton = { TextButton(onClick = { done() }) { Text("Sonra") } })
+}

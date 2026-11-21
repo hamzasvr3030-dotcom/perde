@@ -28,6 +28,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Settings
@@ -76,7 +77,8 @@ sealed interface Route {
     data class MusicFolder(val path: String) : Route
     data object MusicSearch : Route
     data object Net : Route
-    data object Network : Route
+    data object DlTab : Route
+    data object DlHistory : Route
     data object SmbList : Route
     data class SmbBrowse(val server: SmbServer, val path: String) : Route
     data object Transfer : Route
@@ -94,6 +96,7 @@ object AppState {
     var update by mutableStateOf<Updater.Rel?>(null)
     var sharedUrl by mutableStateOf<String?>(null)
     var openNet by mutableIntStateOf(0)
+    var clipUrl by mutableStateOf<String?>(null)
 }
 
 class LibVM(app: Application) : AndroidViewModel(app) {
@@ -145,6 +148,17 @@ class MainActivity : AppCompatActivity() {
         if (i.getBooleanExtra("openDownloads", false)) AppState.openNet++
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus || !DlPrefs.clipboard || AppState.clipUrl != null) return
+        try {
+            val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            val t = cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
+            val u = Web.extractUrl(t)
+            if (u != null && Web.isPage(u) && u != DlPrefs.lastClip) { DlPrefs.lastClip = u; AppState.clipUrl = u }
+        } catch (_: Exception) { }
+    }
+
     override fun onDestroy() {
         controller?.let { MediaController.releaseFuture(it) }
         super.onDestroy()
@@ -167,7 +181,12 @@ fun MainApp() {
     LaunchedEffect(Unit) {
         if (Build.VERSION.SDK_INT >= 33 && ctx.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
             notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        launch(Dispatchers.IO) { try { Web.init(ctx); Web.maybeUpdate(ctx) } catch (_: Throwable) { } }
+        Dl.init(ctx)
+        launch(Dispatchers.IO) {
+            try { Web.init(ctx); Web.maybeUpdate(ctx) } catch (_: Throwable) { }
+            if (Dl.follows.isNotEmpty() && System.currentTimeMillis() - Prefs.sp.getLong("dlFollowChk", 0) > 6 * 3600_000L)
+                try { Dl.checkFollows(ctx, notify = true) } catch (_: Throwable) { }
+        }
     }
     // Güncelleme kontrolü: uygulama her öne geldiğinde, en fazla 15 dakikada bir.
     // Sunucuya ulaşılamazsa zaman kaydedilmez, bir sonraki açılışta yeniden denenir.
@@ -179,17 +198,19 @@ fun MainApp() {
             }
         }
     }
+    LaunchedEffect(Dl.doneTick) { if (Dl.doneTick > 0) { delay(1200); vm.reload() } }
     Surface(color = Bg, modifier = Modifier.fillMaxSize()) {
         if (!granted) PermissionScreen { granted = hasStorage(ctx); if (granted) vm.reload() }
         else Shell(vm)
     }
     AppState.update?.let { UpdateDialog(it) { AppState.update = null } }
+    AppState.clipUrl?.let { u -> ClipDialog(u) }
 }
 
 @Composable
 private fun Shell(vm: LibVM) {
     val stacks = remember {
-        listOf(mutableStateListOf<Route>(Route.Home), mutableStateListOf<Route>(Route.Music),
+        listOf(mutableStateListOf<Route>(Route.Home), mutableStateListOf<Route>(Route.Music), mutableStateListOf<Route>(Route.DlTab),
             mutableStateListOf<Route>(Route.Net), mutableStateListOf<Route>(Route.More))
     }
     val tab = AppState.tab
@@ -199,7 +220,7 @@ private fun Shell(vm: LibVM) {
     LaunchedEffect(AppState.openNet) {
         if (AppState.openNet > 0) {
             AppState.showNow = false; AppState.tab = 2
-            val s = stacks[2]; while (s.size > 1) s.removeAt(s.lastIndex); s.add(Route.Network)
+            val s = stacks[2]; while (s.size > 1) s.removeAt(s.lastIndex)
         }
     }
     BackHandler(AppState.showNow || stack.size > 1 || tab != 0) {
@@ -219,13 +240,17 @@ private fun Shell(vm: LibVM) {
                     listOf(
                         Triple("Videolar", Icons.Filled.Home, Icons.Outlined.Home),
                         Triple("Müzik", Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic),
+                        Triple("İndir", Icons.Filled.Download, Icons.Outlined.Download),
                         Triple("Ağ", Icons.Filled.Wifi, Icons.Outlined.Wifi),
                         Triple("Daha", Icons.Filled.Settings, Icons.Outlined.Settings)
                     ).forEachIndexed { i, (label, on, off) ->
                         NavigationBarItem(
                             selected = tab == i,
                             onClick = { if (tab == i) { while (stack.size > 1) stack.removeAt(stack.lastIndex) } else AppState.tab = i },
-                            icon = { Icon(if (tab == i) on else off, label) },
+                            icon = {
+                                if (i == 2 && Dl.activeCount > 0) BadgedBox(badge = { Badge(containerColor = Accent) { Text("${Dl.activeCount}", color = Color(0xFF14100E)) } }) { Icon(if (tab == i) on else off, label) }
+                                else Icon(if (tab == i) on else off, label)
+                            },
                             label = { Text(label) },
                             colors = NavigationBarItemDefaults.colors(selectedIconColor = Color(0xFF14100E), indicatorColor = Accent, selectedTextColor = Accent)
                         )
@@ -248,7 +273,8 @@ private fun Shell(vm: LibVM) {
                 is Route.MusicFolder -> MusicFolderScreen(vm, r.path, back)
                 Route.MusicSearch -> MusicSearchScreen(vm, back)
                 Route.Net -> NetScreen(go)
-                Route.Network -> NetworkScreen(back)
+                Route.DlTab -> DownloadScreen(go)
+                Route.DlHistory -> DlHistoryScreen(back)
                 Route.SmbList -> SmbListScreen(go, back)
                 is Route.SmbBrowse -> SmbBrowseScreen(r.server, r.path, go, back)
                 Route.Transfer -> TransferScreen(back)
@@ -323,4 +349,24 @@ fun UpdateDialog(r: Updater.Rel, dismiss: () -> Unit) {
                 TextButton(onClick = dismiss) { Text("Sonra") }
             }
         })
+}
+
+
+@Composable
+private fun ClipDialog(u: String) {
+    val ctx = LocalContext.current
+    var title by remember(u) { mutableStateOf<String?>(null) }
+    LaunchedEffect(u) { title = Web.preview(u)?.title }
+    AlertDialog(onDismissRequest = { AppState.clipUrl = null },
+        icon = { Icon(Icons.Filled.ContentPaste, null, tint = Accent) },
+        title = { Text("Panoda bağlantı var") },
+        text = { Column {
+            Text(Web.site(u), color = Accent, fontWeight = FontWeight.Bold)
+            Text(title ?: u, maxLines = 3)
+        } },
+        confirmButton = { TextButton(onClick = { AppState.clipUrl = null; AppState.sharedUrl = u; AppState.openNet++ }) { Text("İndir") } },
+        dismissButton = { Row {
+            TextButton(onClick = { AppState.clipUrl = null; PlayerActivity.openKeys(ctx, listOf(u), listOf(title ?: Web.site(u)), 0) }) { Text("Oynat") }
+            TextButton(onClick = { AppState.clipUrl = null }) { Text("Yoksay") }
+        } })
 }

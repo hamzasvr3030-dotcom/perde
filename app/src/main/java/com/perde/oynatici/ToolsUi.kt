@@ -70,7 +70,7 @@ fun NetScreen(go: (Route) -> Unit) {
     val servers = remember { Smb.servers() }
     Page("Ağ", null) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            HubCard(Icons.Filled.Link, "Ağ akışı (URL)", "İnternet adresinden video aç: MP4, MKV, HLS, DASH") { go(Route.Network) }
+            HubCard(Icons.Filled.Download, "Bağlantı aç ve indir", "YouTube, Instagram, TikTok… oynat veya indir; doğrudan video adresleri") { AppState.tab = 2 }
             HubCard(Icons.Filled.Lan, "Ağ klasörleri (SMB)", if (servers.isEmpty()) "Bilgisayardaki paylaşılan klasörden indirmeden izle" else "${servers.size} kayıtlı sunucu") { go(Route.SmbList) }
             HubCard(Icons.Filled.Wifi, "Wi-Fi aktarım", "Bilgisayardan telefona video gönder / telefondan indir") { go(Route.Transfer) }
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(AccentDeep.copy(alpha = 0.5f)).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -78,138 +78,6 @@ fun NetScreen(go: (Route) -> Unit) {
                 Text("Televizyona yansıtmak için videoyu açıp üst çubuktaki yayın simgesine dokun (Chromecast / Google TV).",
                     fontSize = 13.sp, modifier = Modifier.padding(start = 12.dp))
             }
-        }
-    }
-}
-
-@Composable
-fun NetworkScreen(back: () -> Unit) {
-    val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var url by remember { mutableStateOf(AppState.sharedUrl ?: "") }
-    LaunchedEffect(AppState.sharedUrl) { AppState.sharedUrl?.let { url = it; AppState.sharedUrl = null } }
-    var hist by remember { mutableStateOf(Prefs.netHistory.lines().filter { it.isNotBlank() }) }
-    var info by remember { mutableStateOf<Web.Stream?>(null) }
-    var loading by remember { mutableStateOf(false) }
-    var err by remember { mutableStateOf<String?>(null) }
-    var pickQuality by remember { mutableStateOf(false) }
-    val clip = androidx.compose.ui.platform.LocalClipboardManager.current
-
-    fun remember(u: String) { val h = (listOf(u) + hist.filter { it != u }).take(30); Prefs.netHistory = h.joinToString("\n"); hist = h }
-    fun play(u: String) {
-        val s = u.trim(); if (s.isEmpty()) return
-        remember(s)
-        PlayerActivity.openKeys(ctx, listOf(s), listOf(info?.takeIf { it.page == s }?.title ?: Uri.parse(s).lastPathSegment ?: s), 0)
-    }
-    // Sayfa bağlantısı yapıştırılınca otomatik incele
-    LaunchedEffect(url) {
-        val u = url.trim()
-        info = null; err = null
-        if (!Web.isPage(u)) { loading = false; return@LaunchedEffect }
-        delay(500)
-        loading = true
-        try { info = Web.resolve(ctx, u) } catch (e: Exception) { err = Web.explain(e) }
-        loading = false
-    }
-
-    Page("Ağ akışı ve indirme", back) {
-        LazyColumn(contentPadding = PaddingValues(16.dp)) {
-            item {
-                Text("YouTube, Instagram, TikTok, X, Facebook, Vimeo… bağlantısı ya da doğrudan video adresi yapıştır.", color = Muted, fontSize = 13.sp)
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(url, { url = it }, label = { Text("Bağlantı") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), shape = RoundedCornerShape(16.dp),
-                    trailingIcon = {
-                        if (url.isEmpty()) IconButton(onClick = { clip.getText()?.text?.let { t -> Web.extractUrl(t)?.let { url = it } ?: run { url = t } } }) { Icon(Icons.Filled.ContentPaste, "Yapıştır") }
-                        else IconButton(onClick = { url = "" }) { Icon(Icons.Filled.Close, "Temizle") }
-                    })
-                Spacer(Modifier.height(12.dp))
-                when {
-                    loading -> Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Surf).padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(Modifier.size(28.dp), color = Accent, strokeWidth = 3.dp)
-                        Text("${Web.site(url.trim())} bağlantısı inceleniyor…", Modifier.padding(start = 14.dp))
-                    }
-                    err != null -> Text("⚠ $err", color = Color(0xFFFF8A80), modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Surf).padding(14.dp))
-                    info != null -> WebCard(info!!)
-                }
-                Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(onClick = { play(url) }, enabled = url.isNotBlank() && Web.isHttp(url.trim()) && !loading, modifier = Modifier.weight(1f).height(52.dp)) {
-                        Icon(Icons.Filled.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Oynat")
-                    }
-                    FilledTonalButton(onClick = { pickQuality = true }, enabled = url.isNotBlank() && Web.isHttp(url.trim()) && !loading, modifier = Modifier.weight(1f).height(52.dp)) {
-                        Icon(Icons.Filled.Download, null); Spacer(Modifier.width(6.dp)); Text("İndir")
-                    }
-                }
-            }
-            if (Downloads.items.isNotEmpty()) {
-                item { Text("İndirmeler", color = Accent, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 22.dp, bottom = 6.dp)) }
-                items(Downloads.items, key = { it.id }) { d -> DownloadRow(d) }
-            }
-            if (hist.isNotEmpty()) {
-                item { Text("Geçmiş", color = Accent, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 22.dp, bottom = 6.dp)) }
-                items(hist, key = { "h$it" }) { h ->
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { url = h }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.History, null, tint = Muted)
-                        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                            Text(Web.site(h), fontSize = 12.sp, color = Accent)
-                            Text(h, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
-                        }
-                        IconButton(onClick = { hist = hist - h; Prefs.netHistory = hist.joinToString("\n") }) { Icon(Icons.Filled.Close, "Sil") }
-                    }
-                }
-            }
-            item {
-                Text("Not: Sadece izin verilen veya kendi içeriklerini indir; telif hakkı olan içerikleri paylaşma. Gizli hesaplar ve yaş sınırlı videolar giriş gerektirdiği için açılamayabilir.",
-                    color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 20.dp))
-            }
-        }
-    }
-    if (pickQuality) ModalBottomSheet(onDismissRequest = { pickQuality = false }, containerColor = Surf) {
-        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
-            DownloadQualityContent { q ->
-                val u = url.trim(); remember(u)
-                Downloads.start(ctx, u, info?.title ?: Web.site(u), info?.thumb, q)
-                pickQuality = false
-                toast(ctx, "İndirme başladı")
-            }
-        }
-    }
-}
-
-@Composable
-private fun WebCard(s: Web.Stream) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Surf).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.width(140.dp).aspectRatio(16 / 9f).clip(RoundedCornerShape(12.dp)).background(Surf2)) {
-            if (s.thumb != null) coil3.compose.AsyncImage(s.thumb, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
-            if (s.durationSec > 0) Text(fmtTime(s.durationSec * 1000L), color = Color.White, fontSize = 11.sp,
-                modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp).clip(RoundedCornerShape(5.dp)).background(Color(0xB3000000)).padding(horizontal = 4.dp))
-        }
-        Column(Modifier.weight(1f).padding(start = 12.dp)) {
-            Text(Web.site(s.page), color = Accent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            Text(s.title, maxLines = 3, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-            listOfNotNull(s.uploader, if (s.height > 0) "${s.height}p" else null).joinToString(" · ").takeIf { it.isNotEmpty() }?.let { Text(it, color = Muted, fontSize = 12.sp) }
-        }
-    }
-}
-
-@Composable
-private fun DownloadRow(d: DL) {
-    val ctx = LocalContext.current
-    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp).clip(RoundedCornerShape(14.dp)).background(Surf)
-        .clickable(enabled = d.state == 2 && d.file != null) { d.file?.let { f -> playKeys(ctx, listOf(f)) } }.padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Icon(when (d.state) { 2 -> Icons.Filled.CheckCircle; 3 -> Icons.Filled.ErrorOutline; 4 -> Icons.Filled.Cancel; else -> Icons.Filled.Downloading },
-            null, tint = when (d.state) { 2 -> Color(0xFF3DDC97); 3 -> Color(0xFFFF6B6B); 4 -> Muted; else -> Accent })
-        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-            Text(d.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
-            Text("${Downloads.QUALITIES[d.quality]} · ${d.info.ifEmpty { "Sırada" }}", color = if (d.state == 3) Color(0xFFFF8A80) else Muted, fontSize = 12.sp, maxLines = 2)
-            if (d.state <= 1) LinearProgressIndicator(progress = { d.progress }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp).clip(CircleShape), color = Accent, trackColor = Surf2)
-        }
-        when (d.state) {
-            0, 1 -> IconButton(onClick = { Downloads.cancel(d) }) { Icon(Icons.Filled.Close, "İptal") }
-            2 -> Icon(Icons.Filled.PlayArrow, "Oynat", tint = Accent)
-            else -> IconButton(onClick = { Downloads.items.remove(d) }) { Icon(Icons.Filled.Delete, "Kaldır", tint = Muted) }
         }
     }
 }

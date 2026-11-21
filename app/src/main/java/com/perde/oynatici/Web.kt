@@ -1,70 +1,96 @@
 package com.perde.oynatici
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
-import android.app.Service
 import android.content.Context
-import android.content.Intent
-import android.content.pm.ServiceInfo
-import android.os.Build
-import android.os.Environment
-import android.os.IBinder
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
-import androidx.core.app.NotificationCompat
-import androidx.core.app.ServiceCompat
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Executors
 
 /**
- * YouTube, Instagram, TikTok, X, Facebook, Vimeo… gibi sayfa bağlantılarını yt-dlp ile
- * oynatılabilir akışa çevirir ve indirir.
+ * YouTube, Instagram, TikTok, X, Facebook, Vimeo… bağlantılarını yt-dlp ile çözümler:
+ * tek video → oynatılabilir akış, liste/kanal → içerik listesi, arama → sonuçlar.
  */
 object Web {
     data class Stream(
         val page: String, val title: String, val thumb: String?, val uploader: String?, val durationSec: Int,
         val videoUrl: String, val audioUrl: String?, val headers: Map<String, String>, val height: Int
     )
+    data class Entry(val id: String, val url: String, val title: String, val durationSec: Int, val uploader: String?, val thumb: String?)
+    data class Preview(val title: String, val thumb: String?, val author: String?)
+
+    sealed class Analysis {
+        /** Tek video. playlistUrl: video bir listenin parçasıysa o listenin adresi. */
+        data class Single(val s: Stream, val playlistUrl: String?) : Analysis()
+        data class Multi(val url: String, val title: String, val uploader: String?, val count: Int, val entries: List<Entry>, val isChannel: Boolean) : Analysis()
+    }
 
     @Volatile private var ready = false
-    private val cache = ConcurrentHashMap<String, Pair<Long, Stream>>()
+    private val cache = ConcurrentHashMap<String, Pair<Long, Analysis>>()
+    private val streamCache = ConcurrentHashMap<String, Pair<Long, Stream>>()
     /** Akış sunucusu → yt-dlp'nin istediği HTTP başlıkları (User-Agent, Referer, Cookie…). */
     val headers = ConcurrentHashMap<String, Map<String, String>>()
 
     private val DIRECT = VIDEO_EXT + AUDIO_EXT + setOf("m3u8", "mpd")
+    const val PLAY_FMT = "bv*[height<=1080][vcodec!^=av01]+ba/b[height<=1080]/bv*+ba/b"
+    const val FALLBACK_FMT = "b[height<=720]/bv*[height<=720][vcodec^=avc1]+ba[ext=m4a]/bv*[height<=720]+ba/b/bv*+ba"
 
     fun isHttp(u: String) = u.startsWith("http://", true) || u.startsWith("https://", true)
     fun isDirect(u: String): Boolean {
         val path = u.substringBefore('?').substringBefore('#').lowercase(Locale.ROOT)
         return path.substringAfterLast('/').substringAfterLast('.', "") in DIRECT
     }
-    /** Sayfa bağlantısı mı (çözümlenmesi gerekiyor mu)? */
     fun isPage(u: String) = isHttp(u) && !isDirect(u)
 
-    /** Metnin içinden ilk bağlantıyı çıkarır ("Şu videoya bak https://youtu.be/…"). */
     fun extractUrl(text: String?): String? = text?.let { Regex("https?://\\S+").find(it)?.value?.trimEnd('.', ',', ')', '"', '\'') }
+    fun extractUrls(text: String): List<String> = Regex("https?://\\S+").findAll(text).map { it.value.trimEnd('.', ',', ')', '"', '\'') }.distinct().toList()
+
+    private fun host(u: String) = try { URL(u).host.lowercase(Locale.ROOT) } catch (_: Exception) { "" }
 
     fun site(u: String): String {
-        val h = try { android.net.Uri.parse(u).host ?: "" } catch (_: Exception) { "" }
+        val h = host(u)
         return when {
             "youtu" in h -> "YouTube"; "instagram" in h -> "Instagram"; "tiktok" in h -> "TikTok"
             "twitter" in h || h == "x.com" || h.endsWith(".x.com") -> "X (Twitter)"; "facebook" in h || "fb.watch" in h -> "Facebook"
             "vimeo" in h -> "Vimeo"; "dailymotion" in h -> "Dailymotion"; "twitch" in h -> "Twitch"; "reddit" in h -> "Reddit"
-            else -> h.removePrefix("www.")
+            "soundcloud" in h -> "SoundCloud"
+            else -> h.removePrefix("www.").removePrefix("m.")
         }
     }
+
+    /** YouTube kanal adresi sekme içermiyorsa "/videos" ekler (aksi hâlde yt-dlp sekmeleri liste olarak verir). */
+    fun normalize(u: String): String {
+        val t = u.trim()
+        val h = host(t)
+        if ("youtube.com" in h) {
+            val path = t.substringAfter(h).substringBefore('?')
+            val m = Regex("^/(@[^/]+|channel/[^/]+|c/[^/]+|user/[^/]+)/?$").find(path)
+            if (m != null) return "https://www.youtube.com/${m.groupValues[1]}/videos"
+        }
+        return t
+    }
+
+    /** YouTube "watch?v=…&list=…" bağlantısındaki listenin adresi. */
+    fun playlistOf(u: String): String? {
+        if ("youtu" !in host(u)) return null
+        val list = Regex("[?&]list=([A-Za-z0-9_-]+)").find(u)?.groupValues?.get(1) ?: return null
+        if (list.startsWith("RD")) return null // otomatik "mix" listeleri sonsuzdur
+        val hasVideo = Regex("[?&]v=|youtu\\.be/|/shorts/").containsMatchIn(u)
+        return if (hasVideo) "https://www.youtube.com/playlist?list=$list" else null
+    }
+
+    fun isChannel(u: String) = "youtube.com" in host(u) && Regex("/(@[^/]+|channel/|c/|user/)").containsMatchIn(u)
+
+    /** URL'den video kimliği (YouTube için v=…), yoksa URL'nin kendisi. */
+    fun idOf(u: String): String =
+        Regex("(?:[?&]v=|youtu\\.be/|/shorts/)([A-Za-z0-9_-]{11})").find(u)?.groupValues?.get(1) ?: u.substringBefore('#')
 
     @Synchronized
     fun init(ctx: Context) {
@@ -75,178 +101,171 @@ object Web {
         ready = true
     }
 
-    /** yt-dlp'yi en fazla 3 günde bir günceller (siteler değiştikçe çözümleyici de güncel kalsın). */
-    fun maybeUpdate(ctx: Context) {
+    /** yt-dlp'yi en fazla 3 günde bir günceller. */
+    fun maybeUpdate(ctx: Context, force: Boolean = false) {
         val last = Prefs.sp.getLong("ytdlpUpd", 0)
-        if (System.currentTimeMillis() - last < 3 * 86_400_000L) return
+        if (!force && System.currentTimeMillis() - last < 3 * 86_400_000L) return
+        if (force && System.currentTimeMillis() - last < 10 * 60_000L) return
         try {
             init(ctx)
-            YoutubeDL.getInstance().updateYoutubeDL(ctx.applicationContext, YoutubeDL.UpdateChannel._STABLE)
             Prefs.sp.edit().putLong("ytdlpUpd", System.currentTimeMillis()).apply()
+            YoutubeDL.getInstance().updateYoutubeDL(ctx.applicationContext, YoutubeDL.UpdateChannel._STABLE)
         } catch (_: Exception) { }
     }
 
     fun version(ctx: Context): String = try { init(ctx); YoutubeDL.getInstance().versionName(ctx.applicationContext) ?: "?" } catch (_: Exception) { "?" }
 
-    /** Hata metnini kullanıcıya anlaşılır hale getirir. */
+    // ---------------- hesap çerezleri ----------------
+    fun cookieFile(ctx: Context) = File(ctx.filesDir, "cookies.txt")
+    fun addCookies(ctx: Context, r: YoutubeDLRequest) {
+        val f = cookieFile(ctx)
+        if (f.exists() && f.length() > 40) r.addOption("--cookies", f.absolutePath)
+    }
+
     fun explain(e: Throwable): String {
         val m = (e.message ?: e.toString())
+        val low = m.lowercase()
         return when {
-            "Sign in to confirm" in m || "login" in m.lowercase() || "cookies" in m.lowercase() ->
-                "Bu içerik giriş yapmadan açılamıyor (yaş sınırı veya gizli hesap olabilir)."
-            "Private video" in m || "private" in m.lowercase() -> "Bu video gizli."
-            "Unsupported URL" in m -> "Bu site desteklenmiyor."
-            "Video unavailable" in m || "not available" in m -> "Video kaldırılmış veya bu bölgede yok."
-            "Unable to resolve host" in m || "Failed to resolve" in m || "Network is unreachable" in m || "timed out" in m ->
-                "İnternet bağlantısı yok veya çok yavaş."
-            "HTTP Error 429" in m -> "Site çok fazla istek nedeniyle geçici olarak engelledi. Birkaç dakika sonra dene."
+            "sign in to confirm" in low && "bot" in low -> "YouTube bu isteği bot sandı. İndir sekmesi › Hesaplar'dan YouTube'a giriş yapıp tekrar dene."
+            "sign in to confirm" in low || "login" in low || "logged-in" in low || "cookies" in low || ("age" in low && "restrict" in low) ->
+                "Bu içerik giriş gerektiriyor (yaş sınırı veya gizli hesap). İndir sekmesi › Hesaplar'dan giriş yapabilirsin."
+            "private video" in low || "is private" in low -> "Bu video gizli."
+            "unsupported url" in low -> "Bu site desteklenmiyor."
+            "video unavailable" in low || "not available" in low || "has been removed" in low -> "Video kaldırılmış veya bu bölgede yok."
+            "drm" in low -> "Bu içerik kopya korumalı (DRM), indirilemez."
+            "unable to resolve host" in low || "failed to resolve" in low || "network is unreachable" in low || "timed out" in low ||
+                "connection reset" in low || "getaddrinfo" in low || "connection refused" in low -> "İnternet bağlantısı yok veya koptu."
+            "http error 429" in low -> "Site çok fazla istek yüzünden geçici olarak engelledi. Birkaç dakika sonra dene."
+            "http error 403" in low -> "Site erişimi reddetti (403). Biraz sonra tekrar dene."
+            "no space left" in low -> "Telefonda yer kalmadı."
             else -> m.lineSequence().lastOrNull { it.contains("ERROR") }?.substringAfter("ERROR:")?.trim()?.take(200) ?: m.take(200)
         }
     }
 
-    /** Sayfa bağlantısını oynatılabilir akışa çevirir. fallback=true: tek dosyalı (birleşik) biçim. */
+    fun isNetworkError(m: String?): Boolean {
+        val l = (m ?: "").lowercase()
+        return listOf("unable to resolve host", "failed to resolve", "network is unreachable", "timed out", "connection reset",
+            "getaddrinfo", "connection refused", "connection aborted", "remote end closed", "incompleteread", "ssl").any { it in l }
+    }
+
+    private fun runJson(ctx: Context, r: YoutubeDLRequest): JSONObject {
+        init(ctx)
+        addCookies(ctx, r)
+        r.addOption("-J"); r.addOption("--no-warnings")
+        val out = try { YoutubeDL.getInstance().execute(r).out } catch (e: Exception) {
+            val low = (e.message ?: "").lowercase()
+            if ("unsupported url" in low || "private" in low || "unavailable" in low || isNetworkError(low)) throw e
+            // eskimiş çözümleyici olabilir: bir kez güncelleyip tekrar dene
+            maybeUpdate(ctx, force = true)
+            YoutubeDL.getInstance().execute(r).out
+        }
+        val line = out.lineSequence().map { it.trim() }.lastOrNull { it.startsWith("{") } ?: throw IllegalStateException("Bilgi alınamadı")
+        return JSONObject(line)
+    }
+
+    private fun hdrMap(o: JSONObject?): Map<String, String> {
+        if (o == null) return emptyMap()
+        val m = HashMap<String, String>(); o.keys().forEach { k -> m[k] = o.optString(k) }; return m
+    }
+
+    private fun streamFrom(o: JSONObject, page: String): Stream {
+        val rf = o.optJSONArray("requested_formats")
+        val video: String; var audio: String? = null; var h = o.optInt("height")
+        var hdr = hdrMap(o.optJSONObject("http_headers"))
+        if (rf != null && rf.length() >= 2) {
+            val fs = (0 until rf.length()).map { rf.getJSONObject(it) }
+            val v = fs.firstOrNull { it.optString("vcodec", "none") != "none" } ?: fs[0]
+            val a = fs.firstOrNull { it !== v && it.optString("vcodec", "none") == "none" } ?: fs[1]
+            video = v.getString("url"); audio = a.optString("url").ifEmpty { null }; h = v.optInt("height")
+            v.optJSONObject("http_headers")?.let { hdr = hdrMap(it) }
+        } else {
+            video = o.optString("url").ifEmpty { rf?.optJSONObject(0)?.optString("url") ?: "" }
+            if (video.isEmpty()) throw IllegalStateException("Oynatılabilir akış bulunamadı")
+        }
+        listOfNotNull(video, audio).forEach { u -> host(u).takeIf { it.isNotEmpty() }?.let { headers[it] = hdr } }
+        return Stream(page, o.optString("title").ifEmpty { site(page) }, o.optString("thumbnail").ifEmpty { null },
+            o.optString("uploader").ifEmpty { o.optString("channel") }.ifEmpty { null }, o.optDouble("duration", 0.0).toInt(),
+            video, audio, hdr, h)
+    }
+
+    private fun entries(o: JSONObject): List<Entry> {
+        val a = o.optJSONArray("entries") ?: return emptyList()
+        return (0 until a.length()).mapNotNull { i ->
+            val e = a.optJSONObject(i) ?: return@mapNotNull null
+            val id = e.optString("id")
+            var url = e.optString("url").ifEmpty { e.optString("webpage_url") }
+            val yt = e.optString("ie_key").contains("Youtube", true) || "youtu" in url
+            if (yt && id.isNotEmpty() && !url.startsWith("http")) url = "https://www.youtube.com/watch?v=$id"
+            if (url.isEmpty()) return@mapNotNull null
+            val thumb = if (yt && id.isNotEmpty()) "https://i.ytimg.com/vi/$id/mqdefault.jpg"
+            else e.optJSONArray("thumbnails")?.let { t -> if (t.length() > 0) t.optJSONObject(t.length() - 1)?.optString("url") else null }
+            Entry(id.ifEmpty { url }, url, e.optString("title").ifEmpty { "Video ${i + 1}" }, e.optDouble("duration", 0.0).toInt(),
+                e.optString("channel").ifEmpty { e.optString("uploader") }.ifEmpty { null }, thumb)
+        }
+    }
+
+    /** Bağlantıyı inceler: tek video mu, liste/kanal mı? (sonuç 20 dk önbellekte) */
+    suspend fun analyze(ctx: Context, raw: String): Analysis = withContext(Dispatchers.IO) {
+        val url = normalize(raw)
+        cache[url]?.let { (t, a) -> if (System.currentTimeMillis() - t < 20 * 60_000L) return@withContext a }
+        val r = YoutubeDLRequest(url)
+        r.addOption("--flat-playlist")
+        r.addOption("-f", PLAY_FMT)
+        val pl = playlistOf(url)
+        if (pl != null) r.addOption("--no-playlist")
+        r.addOption("-I", if (isChannel(url)) "1:200" else "1:500")
+        val o = runJson(ctx, r)
+        val a: Analysis = if (o.optString("_type") == "playlist" || o.has("entries")) {
+            val es = entries(o)
+            Analysis.Multi(url, o.optString("title").ifEmpty { site(url) }, o.optString("uploader").ifEmpty { o.optString("channel") }.ifEmpty { null },
+                o.optInt("playlist_count", es.size).coerceAtLeast(es.size), es, isChannel(url))
+        } else {
+            val s = streamFrom(o, raw.trim())
+            streamCache["${raw.trim()}#false"] = System.currentTimeMillis() to s
+            Analysis.Single(s, pl)
+        }
+        cache[url] = System.currentTimeMillis() to a
+        a
+    }
+
+    /** Oynatma için akış. fallback=true: tek dosyalı / daha uyumlu biçim. */
     suspend fun resolve(ctx: Context, url: String, fallback: Boolean = false): Stream = withContext(Dispatchers.IO) {
         val key = "$url#$fallback"
-        cache[key]?.let { (t, s) -> if (System.currentTimeMillis() - t < 20 * 60_000L) return@withContext s }
-        init(ctx)
-        val req = YoutubeDLRequest(url)
-        req.addOption("--no-playlist")
-        req.addOption("-f", if (fallback) "b[height<=720]/bv*[height<=720][vcodec^=avc1]+ba[ext=m4a]/bv*[height<=720]+ba/b/bv*+ba" else "bv*[height<=1080][vcodec!^=av01]+ba/b[height<=1080]/bv*+ba/b")
-        val info = try { YoutubeDL.getInstance().getInfo(req) } catch (e: Exception) {
-            // eskimiş çözümleyici: bir kez güncelleyip tekrar dene
-            Prefs.sp.edit().putLong("ytdlpUpd", 0).apply(); maybeUpdate(ctx)
-            YoutubeDL.getInstance().getInfo(req)
-        }
-        val rf = info.requestedFormats
-        var video: String; var audio: String? = null; var h = 0
-        var hdr: Map<String, String> = info.httpHeaders ?: emptyMap()
-        if (rf != null && rf.size >= 2) {
-            val v = rf.firstOrNull { it.vcodec != null && it.vcodec != "none" } ?: rf[0]
-            val a = rf.firstOrNull { it !== v && (it.vcodec == null || it.vcodec == "none") } ?: rf[1]
-            video = v.url ?: throw IllegalStateException("Akış adresi yok"); audio = a.url; h = v.height
-            v.httpHeaders?.let { hdr = it }
-        } else {
-            video = info.url ?: rf?.firstOrNull()?.url ?: throw IllegalStateException("Akış adresi yok")
-            h = rf?.firstOrNull()?.height ?: 0
-        }
-        listOfNotNull(video, audio).forEach { u -> android.net.Uri.parse(u).host?.let { headers[it] = hdr } }
-        val s = Stream(url, info.title ?: site(url), info.thumbnail, info.uploader, info.duration, video, audio, hdr, h)
-        cache[key] = System.currentTimeMillis() to s
+        streamCache[key]?.let { (t, s) -> if (System.currentTimeMillis() - t < 20 * 60_000L) return@withContext s }
+        val r = YoutubeDLRequest(url)
+        r.addOption("--no-playlist")
+        r.addOption("-f", if (fallback) FALLBACK_FMT else PLAY_FMT)
+        val s = streamFrom(runJson(ctx, r), url)
+        streamCache[key] = System.currentTimeMillis() to s
         s
     }
 
-    fun cached(url: String): Stream? = cache["$url#false"]?.second
-}
+    fun cached(url: String): Stream? = streamCache["$url#false"]?.second ?: streamCache["$url#true"]?.second
 
-// ============================ İndirmeler ============================
-class DL(val id: String, val url: String, val title: String, val thumb: String?, val quality: Int) {
-    var state by mutableStateOf(0)          // 0 sırada, 1 iniyor, 2 bitti, 3 hata, 4 iptal
-    var progress by mutableFloatStateOf(0f)
-    var info by mutableStateOf("")
-    var file by mutableStateOf<String?>(null)
-}
-
-object Downloads {
-    val QUALITIES = listOf("En iyi (1080p'ye kadar)", "720p", "480p", "Sadece ses (M4A)")
-    val items = mutableStateListOf<DL>()
-
-    fun start(ctx: Context, url: String, title: String, thumb: String?, quality: Int) {
-        val d = DL("dl${System.currentTimeMillis()}", url, title, thumb, quality)
-        items.add(0, d)
-        val i = Intent(ctx, DownloadService::class.java).putExtra("id", d.id)
-        if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i) else ctx.startService(i)
+    /** YouTube'da arama. */
+    suspend fun search(ctx: Context, q: String, n: Int = 30): List<Entry> = withContext(Dispatchers.IO) {
+        val r = YoutubeDLRequest("ytsearch$n:$q")
+        r.addOption("--flat-playlist")
+        entries(runJson(ctx, r))
     }
 
-    fun cancel(d: DL) {
-        if (d.state == 1) try { YoutubeDL.getInstance().destroyProcessById(d.id) } catch (_: Exception) { }
-        d.state = 4; d.info = "İptal edildi"
-    }
-
-    fun outDir(audio: Boolean): File =
-        File(Environment.getExternalStoragePublicDirectory(if (audio) Environment.DIRECTORY_MUSIC else Environment.DIRECTORY_MOVIES), "Kadraj").apply { mkdirs() }
-
-    /** Asıl indirme işi (servisin iş parçacığında çalışır). */
-    fun run(ctx: Context, d: DL, onProgress: () -> Unit) {
-        if (d.state == 4) return
-        d.state = 1; d.info = "Hazırlanıyor…"; onProgress()
+    /** Sitenin kendi hızlı bilgi servisinden (oEmbed) başlık + kapak: genelde 1 saniyenin altında. */
+    suspend fun preview(url: String): Preview? = withContext(Dispatchers.IO) {
+        val h = host(url)
+        val endpoint = when {
+            "youtu" in h -> "https://www.youtube.com/oembed?format=json&url="
+            "vimeo" in h -> "https://vimeo.com/api/oembed.json?url="
+            "tiktok" in h -> "https://www.tiktok.com/oembed?url="
+            "soundcloud" in h -> "https://soundcloud.com/oembed?format=json&url="
+            "dailymotion" in h -> "https://www.dailymotion.com/services/oembed?url="
+            else -> return@withContext null
+        }
         try {
-            Web.init(ctx)
-            val audio = d.quality == 3
-            val dir = outDir(audio)
-            val req = YoutubeDLRequest(d.url)
-            req.addOption("--no-playlist"); req.addOption("--no-mtime"); req.addOption("--newline"); req.addOption("--progress")
-            req.addOption("-o", dir.absolutePath + "/%(title).90B [%(id)s].%(ext)s")
-            req.addOption("--print", "after_move:filepath")
-            when (d.quality) {
-                3 -> { req.addOption("-f", "ba[ext=m4a]/ba/b"); req.addOption("-x"); req.addOption("--audio-format", "m4a") }
-                else -> {
-                    val h = when (d.quality) { 1 -> 720; 2 -> 480; else -> 1080 }
-                    req.addOption("-f", "bv*[height<=$h][ext=mp4][vcodec!^=av01]+ba[ext=m4a]/bv*[height<=$h][vcodec!^=av01]+ba/b[height<=$h]/bv*+ba/b")
-                    req.addOption("--merge-output-format", "mp4")
-                }
-            }
-            val res = YoutubeDL.getInstance().execute(req, d.id) { p, eta, _ ->
-                if (p >= 0) { d.progress = p / 100f; d.info = "%${p.toInt()}" + if (eta > 0) " · ${fmtTime(eta * 1000)} kaldı" else "" }
-                onProgress()
-            }
-            val path = res.out.lines().map { it.trim() }.lastOrNull { it.isNotEmpty() && File(it).exists() }
-            if (path != null) {
-                Library.scan(ctx, path)
-                d.file = path; d.progress = 1f; d.state = 2; d.info = "İndirildi · ${fmtSize(File(path).length())}"
-            } else { d.state = 2; d.progress = 1f; d.info = "İndirildi (Filmler/Kadraj)" }
-        } catch (e: YoutubeDL.CanceledException) {
-            d.state = 4; d.info = "İptal edildi"
-        } catch (e: Exception) {
-            if (d.state != 4) { d.state = 3; d.info = Web.explain(e) }
-        }
-        onProgress()
+            val c = URL(endpoint + URLEncoder.encode(url, "UTF-8")).openConnection() as HttpURLConnection
+            c.connectTimeout = 4000; c.readTimeout = 4000; c.setRequestProperty("User-Agent", "Mozilla/5.0")
+            if (c.responseCode != 200) return@withContext null
+            val o = JSONObject(c.inputStream.bufferedReader().readText())
+            Preview(o.optString("title").ifEmpty { site(url) }, o.optString("thumbnail_url").ifEmpty { null }, o.optString("author_name").ifEmpty { null })
+        } catch (_: Exception) { null }
     }
-}
-
-/** İndirmeler ekran kapansa da sürsün diye ön plan servisi. */
-class DownloadService : Service() {
-    private val exec = Executors.newSingleThreadExecutor()
-    private var running = 0
-    private val nm by lazy { getSystemService(NOTIFICATION_SERVICE) as NotificationManager }
-
-    override fun onBind(intent: Intent?): IBinder? = null
-
-    private fun notif(text: String, progress: Float?): Notification {
-        if (Build.VERSION.SDK_INT >= 26) nm.createNotificationChannel(NotificationChannel("dl", "İndirmeler", NotificationManager.IMPORTANCE_LOW))
-        val open = PendingIntent.getActivity(this, 7, Intent(this, MainActivity::class.java).putExtra("openDownloads", true)
-            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE)
-        return NotificationCompat.Builder(this, "dl").setSmallIcon(R.drawable.ic_download).setContentTitle("Kadraj · İndiriliyor")
-            .setContentText(text).setOnlyAlertOnce(true).setOngoing(true).setContentIntent(open)
-            .apply { if (progress != null) setProgress(100, (progress * 100).toInt(), progress <= 0f) }.build()
-    }
-
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        ServiceCompat.startForeground(this, 41, notif("Hazırlanıyor…", 0f),
-            if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0)
-        val d = Downloads.items.firstOrNull { it.id == intent?.getStringExtra("id") }
-        if (d == null) { if (running == 0) stopSelf(); return START_NOT_STICKY }
-        running++
-        exec.execute {
-            var last = 0L
-            Downloads.run(this, d) {
-                val now = System.currentTimeMillis()
-                if (now - last > 700) { last = now; nm.notify(41, notif("${d.title.take(40)} · ${d.info}", d.progress)) }
-            }
-            done(d)
-        }
-        return START_NOT_STICKY
-    }
-
-    private fun done(d: DL) {
-        running--
-        if (d.state == 2 || d.state == 3) {
-            val n = NotificationCompat.Builder(this, "dl").setSmallIcon(R.drawable.ic_download)
-                .setContentTitle(if (d.state == 2) "İndirme tamamlandı" else "İndirme başarısız")
-                .setContentText(d.title.take(60) + if (d.state == 3) " · ${d.info}" else "").setAutoCancel(true).build()
-            nm.notify(d.id.hashCode(), n)
-        }
-        if (running <= 0) { ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE); stopSelf() }
-    }
-
-    override fun onDestroy() { exec.shutdownNow(); super.onDestroy() }
 }

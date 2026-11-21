@@ -607,9 +607,9 @@ private fun PlayerSheet(a: PlayerActivity, s: Sheet) {
                 Sheet.CHAPTERS -> ChaptersSheet(a)
                 Sheet.BOOKMARKS -> BookmarksSheet(a)
                 Sheet.ONLINE -> OnlineSubsSheet(a)
-                Sheet.DOWNLOAD -> DownloadQualityContent { q ->
-                    a.curKey()?.let { k -> Downloads.start(a, k, ui.title, Web.cached(k)?.thumb, q) }
-                    ui.sheet = null; a.toast("İndirme başladı — Ağ > Ağ akışı ekranından takip edebilirsin")
+                Sheet.DOWNLOAD -> DlOptionsContent(false, 1) { o ->
+                    a.curKey()?.let { k -> Dl.addSingles(a, listOf(Triple(k, ui.title, Web.cached(k)?.thumb)), o) }
+                    ui.sheet = null; a.toast("İndirme başladı — İndir sekmesinden takip edebilirsin")
                 }
                 Sheet.PLAYLIST -> PlaylistPickerContent(listOfNotNull(a.curKey())) { msg -> ui.sheet = null; a.toast(msg) }
             }
@@ -778,19 +778,6 @@ private fun MoreSheet(a: PlayerActivity) {
         Tile(Icons.Filled.Info, "Video bilgisi") { ui.sheet = Sheet.INFO }
         Tile(Icons.Filled.Memory, if (decSw) "Çözücü: yazılım" else "Çözücü: donanım", decSw) {
             decSw = !decSw; Prefs.decoderSw = decSw; a.toast("Çözücü ayarı oynatıcı yeniden açılınca geçerli olur")
-        }
-    }
-}
-
-@Composable
-fun DownloadQualityContent(pick: (Int) -> Unit) {
-    SheetTitle("İndir")
-    Text("Videolar Filmler/Kadraj, sesler Müzik/Kadraj klasörüne kaydedilir.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp))
-    Downloads.QUALITIES.forEachIndexed { i, q ->
-        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable { pick(i) }.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(if (i == 3) Icons.Filled.MusicNote else Icons.Filled.Movie, null, tint = Accent)
-            Text(q, Modifier.padding(start = 14.dp).weight(1f), fontWeight = FontWeight.Medium)
-            Icon(Icons.Filled.Download, null, tint = Muted)
         }
     }
 }

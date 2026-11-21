@@ -40,6 +40,7 @@ object Playlists {
         save(all() + p); return p
     }
     fun add(id: Long, keys: List<String>) = save(all().map { if (it.id == id) it.copy(items = (it.items + keys).distinct()) else it })
+    fun setItems(id: Long, items: List<String>) = save(all().map { if (it.id == id) it.copy(items = items) else it })
     fun remove(id: Long, key: String) = save(all().map { if (it.id == id) it.copy(items = it.items - key) else it })
     fun move(id: Long, from: Int, to: Int) = save(all().map {
         if (it.id != id) it else it.copy(items = it.items.toMutableList().apply { add(to.coerceIn(0, size - 1), removeAt(from)) })

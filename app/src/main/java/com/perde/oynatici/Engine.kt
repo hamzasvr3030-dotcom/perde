@@ -81,11 +81,22 @@ object Engine {
     }
 
     private var lastMusicKey: String? = null
+    private var musicBoostOn = false
+
+    /** Müzikte ses yükseltme: %100 + musicBoost (en çok %200), videodaki gibi LoudnessEnhancer ile. */
+    fun applyMusicBoost() {
+        val mb = Prefs.musicBoost * 15   // %100 ek ≈ 1500 mB
+        setBoost(mb); musicBoostOn = mb > 0
+    }
 
     /** Son müzik kuyruğunu sakla (kulaklık takınca devam için) ve şarkıya göre ses seviyesini hatırla. */
     private fun musicBookkeeping(p: ExoPlayer) {
         val item = p.currentMediaItem ?: return
-        if (item.mediaMetadata.mediaType != androidx.media3.common.MediaMetadata.MEDIA_TYPE_MUSIC) return
+        if (item.mediaMetadata.mediaType != androidx.media3.common.MediaMetadata.MEDIA_TYPE_MUSIC) {
+            if (musicBoostOn) { setBoost(0); musicBoostOn = false }   // müzik yükseltmesi videoya taşmasın
+            return
+        }
+        applyMusicBoost()
         LastQueue.save((0 until minOf(p.mediaItemCount, 500)).map { p.getMediaItemAt(it).mediaId }, p.currentMediaItemIndex, p.currentPosition)
         val k = item.mediaId
         if (k == lastMusicKey) return

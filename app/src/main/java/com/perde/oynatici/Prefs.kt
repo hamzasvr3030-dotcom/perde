@@ -59,6 +59,7 @@ object Prefs {
     var eqPreset by IntP("eqPreset", -1)
     var eqBands by StrP("eqBands", "")
     var bass by IntP("bass", 0)
+    var musicBoost by IntP("musicBoost", 0)   // müzikte %100 üstü ek ses (0–100)
 
     // Müzik
     var musicRepeat by IntP("mRepeat", 2)

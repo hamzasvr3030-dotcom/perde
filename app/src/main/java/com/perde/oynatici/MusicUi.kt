@@ -125,6 +125,21 @@ private fun PlayButtons(songs: List<Song>) {
     }
 }
 
+@Composable
+private fun MusicBoostContent() {
+    var v by remember { mutableFloatStateOf(Prefs.musicBoost.toFloat()) }
+    Text("Ses yükseltme", fontSize = 21.sp, fontWeight = FontWeight.Bold)
+    Text("Telefonun sesi en sonda olsa bile müziği daha yüksek çalar. Çok yükseltince bazı şarkılarda cızırtı olabilir.",
+        color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp, bottom = 16.dp))
+    Text("%${100 + v.roundToInt()}", fontSize = 40.sp, fontWeight = FontWeight.Black, color = if (v > 0) Accent else Color.White)
+    Slider(v, { v = it; Prefs.musicBoost = it.roundToInt(); Engine.applyMusicBoost() }, valueRange = 0f..100f, steps = 9)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf(0, 25, 50, 100).forEach { x ->
+            FilterChip(v.roundToInt() == x, { v = x.toFloat(); Prefs.musicBoost = x; Engine.applyMusicBoost() }, label = { Text(if (x == 0) "Kapalı" else "%${100 + x}") })
+        }
+    }
+}
+
 // ---------------- müzik kütüphanesi ----------------
 @Composable
 fun MusicScreen(vm: LibVM, go: (Route) -> Unit) {
@@ -360,7 +375,7 @@ fun MiniPlayer(open: () -> Unit) {
 }
 
 // ---------------- şimdi çalıyor ----------------
-private enum class NpSheet { QUEUE, SLEEP, EQ, PLAYLIST, SETTINGS }
+private enum class NpSheet { QUEUE, SLEEP, EQ, PLAYLIST, SETTINGS, BOOST }
 
 @Composable
 fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
@@ -498,6 +513,7 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
             NpTool(Icons.Filled.GraphicEq, "Dalga", npView == 2) { npView = if (npView == 2) 0 else 2 }
             NpTool(Icons.AutoMirrored.Filled.QueueMusic, "Sıra", false) { sheet = NpSheet.QUEUE }
             NpTool(Icons.Filled.Bedtime, if (sleepLabel.isEmpty()) "Uyku" else sleepLabel, sleepLabel.isNotEmpty()) { sheet = NpSheet.SLEEP }
+            NpTool(Icons.Filled.VolumeUp, if (Prefs.musicBoost > 0) "%${100 + Prefs.musicBoost}" else "Ses+", Prefs.musicBoost > 0) { sheet = NpSheet.BOOST }
             NpTool(Icons.Filled.Equalizer, "Ekolayzer", Prefs.eqOn) { sheet = NpSheet.EQ }
         }
     }
@@ -519,6 +535,7 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
                             sheet = null
                         }
                         NpSheet.EQ -> EqContent()
+                        NpSheet.BOOST -> MusicBoostContent()
                         NpSheet.SETTINGS -> TransitionSettings()
                         NpSheet.PLAYLIST -> PlaylistPickerContent(listOf(key)) { msg -> toast(ctx, msg); sheet = null }
                         else -> {}

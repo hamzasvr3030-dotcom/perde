@@ -33,6 +33,11 @@ object Engine {
         private set
     private var builtSw = false
     val delay = AudioDelayProcessor()
+    val night = NightProcessor()
+    var audioOnly = false
+    var sleepEnd = false
+    var sleptAt = 0L
+    private var appCtx: Context? = null
 
     var eq: Equalizer? = null; private set
     var bassBoost: BassBoost? = null; private set
@@ -53,6 +58,7 @@ object Engine {
             val p = player ?: return
             if (abA >= 0 && abB > abA && p.currentPosition >= abB) p.seekTo(abA)
             if (sleepAt > 0 && SystemClock.elapsedRealtime() >= sleepAt) { sleepAt = 0; p.pause() }
+            if (p.isPlaying) Stats.tick(p.currentMediaItem?.mediaId, 250)
             if (p.isPlaying && SystemClock.elapsedRealtime() - lastSave > 5000) savePos()
             handler.postDelayed(this, 250)
         }
@@ -61,12 +67,14 @@ object Engine {
     fun get(ctx: Context): ExoPlayer {
         player?.let { if (builtSw == Prefs.decoderSw || it.mediaItemCount > 0) return it; release() }
         val app = ctx.applicationContext
+        appCtx = app
+        night.on = Prefs.night
         val rf = object : DefaultRenderersFactory(app) {
             override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink =
                 DefaultAudioSink.Builder(context)
                     .setEnableFloatOutput(false)
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                    .setAudioProcessorChain(DefaultAudioSink.DefaultAudioProcessorChain(delay))
+                    .setAudioProcessorChain(DefaultAudioSink.DefaultAudioProcessorChain(delay, night))
                     .build()
         }
         rf.setExtensionRendererMode(
@@ -85,13 +93,23 @@ object Engine {
             .setPreferredTextLanguage("tr").setPreferredAudioLanguage("tr")
             .setSelectUndeterminedTextLanguage(true).build()
         p.addListener(object : Player.Listener {
-            override fun onIsPlayingChanged(isPlaying: Boolean) { if (!isPlaying) savePos() else ensureEffects() }
+            override fun onIsPlayingChanged(isPlaying: Boolean) { if (!isPlaying) { savePos(); Stats.flush() } else ensureEffects() }
+            override fun onEvents(player: Player, events: Player.Events) {
+                if (events.containsAny(Player.EVENT_IS_PLAYING_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_MEDIA_METADATA_CHANGED, Player.EVENT_TIMELINE_CHANGED)) {
+                    NowState.refresh(); appCtx?.let { PerdeWidget.update(it) }
+                }
+            }
             override fun onPositionDiscontinuity(old: Player.PositionInfo, new: Player.PositionInfo, reason: Int) {
                 if (reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION) {
                     val k = old.mediaItem?.mediaId ?: return
                     val d = Prefs.dur(k).takeIf { it > 0 } ?: old.positionMs
                     Prefs.savePos(k, d, d)
                 }
+            }
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                if (playWhenReady || reason != Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM) return
+                if (sleepEnd) { sleepEnd = false; sleptAt = SystemClock.elapsedRealtime(); p.pauseAtEndOfMediaItems = false }
+                else if (audioOnly && p.hasNextMediaItem()) { p.seekToNextMediaItem(); p.play() }
             }
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_ENDED) {
@@ -159,14 +177,36 @@ object Engine {
         eq = null; bassBoost = null; loud = null; effectsSid = C.AUDIO_SESSION_ID_UNSET
     }
 
+    /** Müzik çalmaya başla (video oynatıcıyla aynı motoru kullanır). */
+    fun playSongs(ctx: Context, songs: List<Song>, index: Int, shuffle: Boolean = false) {
+        if (songs.isEmpty()) return
+        audioOnly = false
+        val p = get(ctx)
+        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, false).build()
+        p.pauseAtEndOfMediaItems = false
+        p.setMediaItems(songs.map { Music.item(it) }, index.coerceIn(0, songs.size - 1), 0)
+        p.shuffleModeEnabled = shuffle
+        p.repeatMode = when (Prefs.musicRepeat) { 1 -> Player.REPEAT_MODE_ONE; 2 -> Player.REPEAT_MODE_ALL; else -> Player.REPEAT_MODE_OFF }
+        p.setPlaybackSpeed(1f)
+        p.prepare(); p.play()
+        NowState.refresh()
+    }
+
+    fun setNight(on: Boolean) {
+        Prefs.night = on; night.on = on
+        player?.let { it.seekTo(it.currentPosition) }
+    }
+
     fun release() {
+        Stats.flush()
         savePos()
         handler.removeCallbacks(ticker)
         releaseEffects()
         player?.release()
         player = null
-        abA = -1; abB = -1; sleepAt = 0
+        abA = -1; abB = -1; sleepAt = 0; sleepEnd = false; audioOnly = false
         delay.delayMs = 0
+        NowState.refresh(); appCtx?.let { PerdeWidget.update(it) }
     }
 }
 
@@ -206,6 +246,42 @@ class AudioDelayProcessor : BaseAudioProcessor() {
         repeat(pad) { out.put(0) }
         silence = 0
         out.put(inputBuffer)
+        out.flip()
+    }
+}
+
+/**
+ * Gece modu: dinamik aralık sıkıştırma. Patlama/müzik gibi yüksek sesleri bastırır,
+ * fısıltı gibi alçak sesleri yükseltir. Yalnızca 16 bit PCM üzerinde çalışır.
+ */
+class NightProcessor : BaseAudioProcessor() {
+    @Volatile var on = false
+    private var env = 0f
+    private var gain = 1f
+
+    override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
+        if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT) throw AudioProcessor.UnhandledAudioFormatException(inputAudioFormat)
+        return inputAudioFormat
+    }
+
+    override fun onFlush() { env = 0f; gain = 1f }
+
+    override fun queueInput(inputBuffer: ByteBuffer) {
+        val n = inputBuffer.remaining()
+        if (n == 0) return
+        val out = replaceOutputBuffer(n)
+        if (!on) { out.put(inputBuffer); out.flip(); return }
+        val src = inputBuffer.order(java.nio.ByteOrder.nativeOrder())
+        while (src.remaining() >= 2) {
+            val x = src.short / 32768f
+            val a = abs(x)
+            env += if (a > env) (a - env) * 0.02f else (a - env) * 0.0004f
+            val target = (0.2f / maxOf(env, 0.02f)).coerceIn(0.35f, 3.2f)
+            gain += (target - gain) * 0.0008f
+            var y = (x * gain).coerceIn(-1.5f, 1.5f)
+            y -= y * y * y / 6.75f
+            out.putShort((y * 32767f).toInt().coerceIn(-32768, 32767).toShort())
+        }
         out.flip()
     }
 }

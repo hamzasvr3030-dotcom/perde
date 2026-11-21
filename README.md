@@ -1,6 +1,6 @@
 ﻿# Perde
 
-Android için kişisel video oynatıcı (Kotlin + Jetpack Compose + Media3/ExoPlayer + FFmpeg ses çözücü).
+Android için kişisel video ve müzik oynatıcı (Kotlin + Jetpack Compose + Media3/ExoPlayer + FFmpeg ses çözücü).
 
 **İndir:** [Releases](../../releases/latest) sayfasındaki `Perde.apk` dosyası.
 
@@ -10,3 +10,4 @@ gömülü ve harici altyazı (SRT/ASS/VTT, Türkçe karakter düzeltme, senkron)
 arka planda oynatma, ağ akışı (URL/HLS/DASH), SMB ağ klasörleri, Chromecast, Wi-Fi aktarım, şifreli gizli klasör.
 
 `replica/` klasöründe incelenen özelliklerin listesi bulunur.
+

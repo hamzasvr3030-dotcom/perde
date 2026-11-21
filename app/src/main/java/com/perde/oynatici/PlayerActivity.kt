@@ -1,3 +1,5 @@
+@file:Suppress("UnsafeOptInUsageError")
+
 package com.perde.oynatici
 
 import android.app.PendingIntent
@@ -11,14 +13,19 @@ import android.content.IntentFilter
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.graphics.Bitmap
 import android.graphics.drawable.Icon
 import android.media.AudioManager
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
 import android.os.SystemClock
 import android.provider.Settings
 import android.util.Rational
+import android.view.PixelCopy
+import android.view.SurfaceView
 import android.view.WindowManager
 import androidx.activity.addCallback
 import androidx.activity.compose.setContent
@@ -31,6 +38,8 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -51,22 +60,27 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import androidx.media3.ui.PlayerView
 import androidx.media3.ui.SubtitleView
 import com.google.android.gms.cast.MediaInfo
 import com.google.android.gms.cast.MediaLoadRequestData
-import com.google.android.gms.cast.MediaMetadata as CastMeta
 import com.google.android.gms.cast.MediaSeekOptions
 import com.google.android.gms.cast.framework.CastContext
 import com.google.android.gms.cast.framework.CastSession
 import com.google.android.gms.cast.framework.SessionManagerListener
 import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
+import com.google.android.gms.cast.MediaMetadata as CastMeta
 
-enum class Sheet { SUBS, AUDIO, SPEED, MORE, SLEEP, EQ, INFO }
+enum class Sheet { SUBS, AUDIO, SPEED, MORE, SLEEP, EQ, INFO, CLIP, CHAPTERS, BOOKMARKS, ONLINE, PLAYLIST }
 
 data class Ind(val kind: String, val text: String, val level: Float? = null)
 
@@ -77,7 +91,6 @@ class PlayerUi {
     var buffering by mutableStateOf(false)
     var pos by mutableLongStateOf(0L)
     var dur by mutableLongStateOf(0L)
-    var buffered by mutableLongStateOf(0L)
     var title by mutableStateOf("")
     var vw by mutableIntStateOf(0)
     var vh by mutableIntStateOf(0)
@@ -91,7 +104,6 @@ class PlayerUi {
     var lockHint by mutableIntStateOf(0)
     var ind by mutableStateOf<Ind?>(null)
     var toast by mutableStateOf<String?>(null)
-    var toastId by mutableIntStateOf(0)
     var sheet by mutableStateOf<Sheet?>(null)
     var tracksVer by mutableIntStateOf(0)
     var inPip by mutableStateOf(false)
@@ -100,6 +112,7 @@ class PlayerUi {
     var repeat by mutableIntStateOf(Prefs.repeat)
     var shuffle by mutableStateOf(Prefs.shuffle)
     var bg by mutableStateOf(Prefs.bgPlay)
+    var night by mutableStateOf(Prefs.night)
     var abA by mutableLongStateOf(-1L)
     var abB by mutableLongStateOf(-1L)
     var sleepLabel by mutableStateOf("")
@@ -110,9 +123,22 @@ class PlayerUi {
     var casting by mutableStateOf(false)
     var castDevice by mutableStateOf("")
     var castPlaying by mutableStateOf(false)
-    var seekPreview by mutableStateOf<Long?>(null)
     var hasPrev by mutableStateOf(false)
     var hasNext by mutableStateOf(false)
+    var nextTitle by mutableStateOf("")
+    var key by mutableStateOf("")
+    // yeni
+    var resumeAsk by mutableStateOf<Long?>(null)
+    var countdown by mutableStateOf<Int?>(null)
+    var tapSide by mutableIntStateOf(0)
+    var tapTotal by mutableIntStateOf(0)
+    var thumb by mutableStateOf<ImageBitmap?>(null)
+    var flash by mutableIntStateOf(0)
+    var busy by mutableStateOf<String?>(null)
+    var busyProgress by mutableFloatStateOf(0f)
+    var chapters by mutableStateOf<List<Pair<Long, String>>>(emptyList())
+    var bmVer by mutableIntStateOf(0)
+    var fav by mutableStateOf(false)
 }
 
 class PlayerActivity : AppCompatActivity() {
@@ -120,16 +146,13 @@ class PlayerActivity : AppCompatActivity() {
         const val EXTRA_LIST = "list"
         const val EXTRA_TITLES = "titles"
         const val EXTRA_INDEX = "index"
+        const val EXTRA_BACK_TO_VIDEO = "backToVideo"
         private const val ACTION_PIP = "com.perde.oynatici.PIP_TOGGLE"
         val ASPECTS = listOf("Sığdır", "Doldur (kırp)", "Uzat", "16:9", "4:3", "Orijinal boyut")
         val ORIENTS = listOf("Videoya göre", "Otomatik döndür", "Yatay", "Dikey")
         val REPEATS = listOf("Tekrar kapalı", "Bu videoyu tekrarla", "Klasörü tekrarla")
-        fun open(ctx: Context, videos: List<Video>, index: Int) {
-            ctx.startActivity(Intent(ctx, PlayerActivity::class.java)
-                .putStringArrayListExtra(EXTRA_LIST, ArrayList(videos.map { it.path }))
-                .putStringArrayListExtra(EXTRA_TITLES, ArrayList(videos.map { it.title }))
-                .putExtra(EXTRA_INDEX, index))
-        }
+        fun open(ctx: Context, videos: List<Video>, index: Int) =
+            openKeys(ctx, videos.map { it.path }, videos.map { it.title }, index)
         fun openKeys(ctx: Context, keys: List<String>, titles: List<String>, index: Int) {
             ctx.startActivity(Intent(ctx, PlayerActivity::class.java)
                 .putStringArrayListExtra(EXTRA_LIST, ArrayList(keys))
@@ -142,14 +165,23 @@ class PlayerActivity : AppCompatActivity() {
     lateinit var player: ExoPlayer
     lateinit var audio: AudioManager
     var subtitleView: SubtitleView? = null
+    var playerView: PlayerView? = null
     private var controller: ListenableFuture<MediaController>? = null
     private var castCtx: CastContext? = null
     var castSession: CastSession? = null
     private var boostLevel = 0f
     private var tapJob: Job? = null
+    private var tapHideJob: Job? = null
     private var lastTap = 0L
     private var indJob: Job? = null
     private var toastJob: Job? = null
+    private var countJob: Job? = null
+    private var leavingForAudio = false
+    private val thumbReq = MutableStateFlow<Long?>(null)
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val serial = Dispatchers.IO.limitedParallelism(1)
+    private var mmr: MediaMetadataRetriever? = null
+    private var mmrKey: String? = null
 
     val pickSub = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -169,6 +201,7 @@ class PlayerActivity : AppCompatActivity() {
             ui.playing = isPlaying
             if (isPlaying) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            if (isPlaying) { ui.countdown = null; countJob?.cancel() }
             updatePip()
         }
         override fun onVideoSizeChanged(videoSize: VideoSize) {
@@ -178,9 +211,9 @@ class PlayerActivity : AppCompatActivity() {
         }
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             ui.title = mediaItem?.mediaMetadata?.title?.toString() ?: ""
-            ui.zoom = 1f; ui.pan = Offset.Zero; ui.error = null
+            ui.zoom = 1f; ui.pan = Offset.Zero; ui.error = null; ui.countdown = null; countJob?.cancel()
             Engine.abA = -1; Engine.abB = -1; ui.abA = -1; ui.abB = -1
-            updateNav()
+            updateNav(); itemChanged()
             if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) onNewItem(reason)
         }
         override fun onTracksChanged(tracks: Tracks) { ui.tracksVer++ }
@@ -189,6 +222,9 @@ class PlayerActivity : AppCompatActivity() {
         override fun onPlaybackStateChanged(playbackState: Int) {
             ui.buffering = playbackState == Player.STATE_BUFFERING
             if (playbackState == Player.STATE_ENDED) { ui.showControls = true; ui.poke++ }
+        }
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM) onItemEnded()
         }
         override fun onPlaybackParametersChanged(p: androidx.media3.common.PlaybackParameters) { if (!longPressing) ui.speed = p.speed }
         override fun onRepeatModeChanged(repeatMode: Int) { updateNav() }
@@ -226,11 +262,11 @@ class PlayerActivity : AppCompatActivity() {
         castCtx = try { @Suppress("DEPRECATION") CastContext.getSharedInstance(this) } catch (_: Throwable) { null }
         castCtx?.sessionManager?.addSessionManagerListener(castListener, CastSession::class.java)
 
-        handleIntent(intent)
+        if (!handleIntent(intent)) return
 
         onBackPressedDispatcher.addCallback(this) {
             when {
-                ui.locked -> { ui.lockHint++ }
+                ui.locked -> ui.lockHint++
                 ui.sheet != null -> ui.sheet = null
                 else -> closePlayer()
             }
@@ -244,13 +280,24 @@ class PlayerActivity : AppCompatActivity() {
                     ui.pos = player.currentPosition.coerceAtLeast(0)
                     val d = player.duration
                     ui.dur = if (d == C.TIME_UNSET) 0 else d
-                    ui.buffered = player.bufferedPosition
                 } else castSession?.remoteMediaClient?.let { c ->
                     ui.pos = c.approximateStreamPosition; ui.dur = c.streamDuration; ui.castPlaying = c.isPlaying
                 }
-                ui.sleepLabel = if (Engine.sleepAt > 0) fmtTime(Engine.sleepAt - SystemClock.elapsedRealtime()) else
-                    if (player.pauseAtEndOfMediaItems) "video sonu" else ""
+                ui.sleepLabel = when {
+                    Engine.sleepAt > 0 -> fmtTime(Engine.sleepAt - SystemClock.elapsedRealtime())
+                    Engine.sleepEnd -> "video sonu"
+                    else -> ""
+                }
                 delay(250)
+            }
+        }
+        lifecycleScope.launch {
+            thumbReq.collectLatest { ms ->
+                if (ms == null) { ui.thumb = null; return@collectLatest }
+                val k = curKey()
+                if (!Prefs.seekThumbs || k == null || !k.startsWith("/")) return@collectLatest
+                val b = withContext(serial) { frameAt(k, ms, 320, 180) }
+                ui.thumb = b?.asImageBitmap()
             }
         }
     }
@@ -261,36 +308,73 @@ class PlayerActivity : AppCompatActivity() {
         handleIntent(intent)
     }
 
+    /** Arka plan iş parçacığında (serial) çağrılmalı. */
+    fun frameAt(k: String, ms: Long, w: Int, h: Int): Bitmap? = try {
+        if (mmrKey != k) { mmr?.release(); mmr = MediaMetadataRetriever().apply { setDataSource(k) }; mmrKey = k }
+        if (Build.VERSION.SDK_INT >= 27) mmr!!.getScaledFrameAtTime(ms * 1000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, w, h)
+        else mmr!!.getFrameAtTime(ms * 1000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+    } catch (_: Exception) { null }
+
+    fun requestThumb(ms: Long?) { thumbReq.value = ms }
+
     // ---------------- yükleme ----------------
     fun curKey(): String? = player.currentMediaItem?.mediaId?.takeIf { it.isNotEmpty() }
+    val isLocal get() = curKey()?.startsWith("/") == true
 
-    private fun handleIntent(i: Intent) {
+    /** false dönerse aktivite kapanıyor. */
+    private fun handleIntent(i: Intent): Boolean {
         val list = i.getStringArrayListExtra(EXTRA_LIST)
         val data = i.data
-        val keys: List<String> = list ?: data?.let { listOf(it.toString()) } ?: emptyList()
+        val keys: List<String> = list ?: data?.let { listOf(if (it.scheme == "file") it.path ?: it.toString() else it.toString()) } ?: emptyList()
         if (keys.isEmpty()) {
-            if (player.mediaItemCount == 0) finish()
-            else { ui.title = player.currentMediaItem?.mediaMetadata?.title?.toString() ?: ""; updateNav(); refreshSubState() }
-            return
+            if (player.mediaItemCount == 0) { finish(); return false }
+            if (i.getBooleanExtra(EXTRA_BACK_TO_VIDEO, false) || Engine.audioOnly) {
+                Engine.audioOnly = false
+                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, false).build()
+                NowState.refresh()
+            } else if (NowState.isMusic) {
+                startActivity(Intent(this, MainActivity::class.java).putExtra("openNow", true).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+                finish(); return false
+            }
+            ui.title = player.currentMediaItem?.mediaMetadata?.title?.toString() ?: ""
+            updateNav(); refreshSubState(); itemChanged()
+            return true
         }
         if (data != null && data.scheme == "content") try { contentResolver.takePersistableUriPermission(data, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) { }
+        // Başka uygulamadan ses dosyası açıldıysa müzik olarak çal
+        val first = keys.first()
+        val isAudio = list == null && (i.type?.startsWith("audio/") == true || isAudioName(nameOf(first)))
+        if (isAudio) {
+            val title = nameOf(first).substringBeforeLast('.')
+            val item = MediaItem.Builder().setUri(uriOf(first)).setMediaId(first)
+                .setMediaMetadata(MediaMetadata.Builder().setTitle(title).setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC).build()).build()
+            Engine.audioOnly = false
+            player.setMediaItem(item); player.prepare(); player.play()
+            startActivity(Intent(this, MainActivity::class.java).putExtra("openNow", true).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+            finish(); return false
+        }
+
+        Engine.audioOnly = false
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, false).build()
         val titles = i.getStringArrayListExtra(EXTRA_TITLES)
         val idx = i.getIntExtra(EXTRA_INDEX, 0).coerceIn(0, keys.size - 1)
         val items = keys.mapIndexed { n, k ->
             val t = titles?.getOrNull(n) ?: nameOf(k)
             buildItem(k, t, if (n == idx) subFor(k) else null)
         }
-        val start = resumePos(keys[idx])
+        val saved = savedPos(keys[idx])
+        val start = if (Prefs.resumeMode == 2) 0L else saved
         Engine.abA = -1; Engine.abB = -1; ui.abA = -1; ui.abB = -1
         player.setMediaItems(items, idx, start)
         player.repeatMode = repeatModeOf(ui.repeat)
         player.shuffleModeEnabled = ui.shuffle
+        player.setPlaybackSpeed(1f)
         player.prepare()
-        player.playWhenReady = true
+        if (Prefs.resumeMode == 1 && saved > 0) { player.playWhenReady = false; ui.resumeAsk = saved }
+        else { player.playWhenReady = true; if (start > 0) toast("Kaldığı yerden devam: ${fmtTime(start)}") }
         ui.title = items[idx].mediaMetadata.title?.toString() ?: ""
-        refreshSubState()
-        updateNav()
-        if (start > 0) toast("Kaldığı yerden devam: ${fmtTime(start)}")
+        updateEndBehavior(); refreshSubState(); updateNav(); itemChanged()
+        return true
     }
 
     private fun nameOf(k: String): String = when {
@@ -302,7 +386,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun buildItem(key: String, title: String, sub: MediaItem.SubtitleConfiguration?): MediaItem {
         val b = MediaItem.Builder().setUri(uriOf(key)).setMediaId(key)
-            .setMediaMetadata(MediaMetadata.Builder().setTitle(title).setDisplayTitle(title).build())
+            .setMediaMetadata(MediaMetadata.Builder().setTitle(title).setDisplayTitle(title).setMediaType(MediaMetadata.MEDIA_TYPE_VIDEO).build())
         val l = key.lowercase(Locale.ROOT)
         if (".m3u8" in l) b.setMimeType(MimeTypes.APPLICATION_M3U8) else if (".mpd" in l) b.setMimeType(MimeTypes.APPLICATION_MPD)
         if (sub != null) b.setSubtitleConfigurations(listOf(sub))
@@ -318,8 +402,7 @@ class PlayerActivity : AppCompatActivity() {
     private fun subFor(key: String): MediaItem.SubtitleConfiguration? =
         subSource(key)?.let { Subs.prepare(this, it, Prefs.subOff(key)) }
 
-    private fun resumePos(key: String): Long {
-        if (!Prefs.resume) return 0
+    private fun savedPos(key: String): Long {
         val p = Prefs.pos(key); val d = Prefs.dur(key)
         return if (p > 3000 && (d <= 0 || p < d - 5000)) p else 0
     }
@@ -328,17 +411,58 @@ class PlayerActivity : AppCompatActivity() {
         val k = curKey() ?: return
         val idx = player.currentMediaItemIndex
         val item = player.currentMediaItem ?: return
-        val pos = resumePos(k)
+        val saved = if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) 0L else savedPos(k)
+        val pos = if (Prefs.resumeMode == 2) 0L else saved
         if (item.localConfiguration?.subtitleConfigurations.isNullOrEmpty()) {
             val sub = subFor(k)
             if (sub != null) {
                 player.replaceMediaItem(idx, item.buildUpon().setSubtitleConfigurations(listOf(sub)).build())
                 player.seekTo(idx, pos)
             } else if (pos > 0) player.seekTo(pos)
-        } else if (pos > 0 && reason != Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) player.seekTo(pos)
+        } else if (pos > 0) player.seekTo(pos)
         refreshSubState()
-        if (pos > 0) toast("Kaldığı yerden devam: ${fmtTime(pos)}")
+        if (Prefs.resumeMode == 1 && saved > 0) { player.pause(); ui.resumeAsk = saved }
+        else if (pos > 0) toast("Kaldığı yerden devam: ${fmtTime(pos)}")
     }
+
+    /** Öğe değişince: bölümler, yer imleri, favori durumu. */
+    private fun itemChanged() {
+        val k = curKey() ?: return
+        ui.key = k; ui.fav = Favs.has(k); ui.bmVer++
+        ui.chapters = emptyList()
+        if (k.startsWith("/")) lifecycleScope.launch { ui.chapters = withContext(Dispatchers.IO) { Chapters.read(k) } }
+        val ni = if (player.hasNextMediaItem()) player.getMediaItemAt(player.nextMediaItemIndex) else null
+        ui.nextTitle = ni?.mediaMetadata?.title?.toString() ?: ""
+    }
+
+    fun answerResume(cont: Boolean) {
+        val p = ui.resumeAsk ?: return
+        ui.resumeAsk = null
+        if (cont) player.seekTo(p) else player.seekTo(0)
+        player.play()
+    }
+
+    /** Video bitince ne olacak: geri sayım / hemen sonraki / dur / uyku. */
+    fun updateEndBehavior() {
+        player.pauseAtEndOfMediaItems = Engine.sleepEnd ||
+            (Prefs.autoNext != 1 && player.repeatMode != Player.REPEAT_MODE_ONE && player.mediaItemCount > 1)
+    }
+
+    private fun onItemEnded() {
+        if (SystemClock.elapsedRealtime() - Engine.sleptAt < 1500) { updateEndBehavior(); toast("Uyku zamanlayıcısı: durduruldu"); return }
+        if (Engine.audioOnly) return
+        if (Prefs.autoNext == 0 && player.hasNextMediaItem()) {
+            ui.countdown = 5; ui.showControls = false
+            countJob?.cancel()
+            countJob = lifecycleScope.launch {
+                while ((ui.countdown ?: 0) > 0) { delay(1000); ui.countdown = (ui.countdown ?: 1) - 1 }
+                if (ui.countdown == 0) playNextNow()
+            }
+        } else { ui.showControls = true; ui.poke++ }
+    }
+
+    fun playNextNow() { countJob?.cancel(); ui.countdown = null; player.seekToNextMediaItem(); player.play() }
+    fun cancelCountdown() { countJob?.cancel(); ui.countdown = null; ui.showControls = true }
 
     fun refreshSubState() {
         val k = curKey()
@@ -358,16 +482,9 @@ class PlayerActivity : AppCompatActivity() {
         refreshSubState()
     }
 
-    fun setSubOffset(v: Long) {
-        val k = curKey() ?: return
-        Prefs.setSubOff(k, v); ui.subOff = v
-        reloadSub()
-    }
+    fun setSubOffset(v: Long) { val k = curKey() ?: return; Prefs.setSubOff(k, v); ui.subOff = v; reloadSub() }
 
-    fun setAudioOffset(v: Long) {
-        Engine.delay.delayMs = v; ui.audioOff = v
-        player.seekTo(player.currentPosition)
-    }
+    fun setAudioOffset(v: Long) { Engine.delay.delayMs = v; ui.audioOff = v; player.seekTo(player.currentPosition) }
 
     private fun describe(e: PlaybackException): String = when (e.errorCode) {
         PlaybackException.ERROR_CODE_DECODER_INIT_FAILED, PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
@@ -382,7 +499,7 @@ class PlayerActivity : AppCompatActivity() {
 
     // ---------------- kontroller ----------------
     fun toast(t: String) {
-        ui.toast = t; ui.toastId++
+        ui.toast = t
         toastJob?.cancel(); toastJob = lifecycleScope.launch { delay(1800); ui.toast = null }
     }
 
@@ -393,6 +510,7 @@ class PlayerActivity : AppCompatActivity() {
 
     fun togglePlay() {
         if (ui.casting) { castSession?.remoteMediaClient?.togglePlayback(); return }
+        ui.resumeAsk?.let { answerResume(true); return }
         if (player.playbackState == Player.STATE_ENDED) { player.seekTo(0); player.play(); return }
         if (player.isPlaying) player.pause() else { if (player.playbackState == Player.STATE_IDLE) player.prepare(); player.play() }
         ui.poke++
@@ -430,9 +548,14 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun repeatModeOf(r: Int) = when (r) { 1 -> Player.REPEAT_MODE_ONE; 2 -> Player.REPEAT_MODE_ALL; else -> Player.REPEAT_MODE_OFF }
-    fun cycleRepeat() { ui.repeat = (ui.repeat + 1) % 3; Prefs.repeat = ui.repeat; player.repeatMode = repeatModeOf(ui.repeat); toast(REPEATS[ui.repeat]) }
+    fun cycleRepeat() {
+        ui.repeat = (ui.repeat + 1) % 3; Prefs.repeat = ui.repeat; player.repeatMode = repeatModeOf(ui.repeat)
+        updateEndBehavior(); toast(REPEATS[ui.repeat])
+    }
     fun toggleShuffle() { ui.shuffle = !ui.shuffle; Prefs.shuffle = ui.shuffle; player.shuffleModeEnabled = ui.shuffle; toast(if (ui.shuffle) "Karışık çalma açık" else "Karışık çalma kapalı") }
     fun toggleBg() { ui.bg = !ui.bg; Prefs.bgPlay = ui.bg; toast(if (ui.bg) "Arka planda oynatma açık" else "Arka planda oynatma kapalı") }
+    fun toggleNight() { ui.night = !ui.night; Engine.setNight(ui.night); toast(if (ui.night) "Gece modu açık: yüksek sesler kısılır, diyaloglar yükselir" else "Gece modu kapalı") }
+    fun toggleFav() { val k = curKey() ?: return; ui.fav = Favs.toggle(k); toast(if (ui.fav) "Favorilere eklendi" else "Favorilerden çıkarıldı") }
 
     fun abStep() {
         when {
@@ -448,14 +571,72 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     fun setSleep(min: Int) {
-        player.pauseAtEndOfMediaItems = false
-        Engine.sleepAt = 0
+        Engine.sleepAt = 0; Engine.sleepEnd = false
         when {
             min > 0 -> { Engine.sleepAt = SystemClock.elapsedRealtime() + min * 60_000L; toast("$min dakika sonra durdurulacak") }
-            min == -1 -> { player.pauseAtEndOfMediaItems = true; toast("Bu video bitince durdurulacak") }
+            min == -1 -> { Engine.sleepEnd = true; toast("Bu video bitince durdurulacak") }
             else -> toast("Uyku zamanlayıcısı kapalı")
         }
-        ui.sheet = null
+        updateEndBehavior(); ui.sheet = null
+    }
+
+    // ---- yer imleri ----
+    fun addBookmark() {
+        val k = curKey() ?: return
+        val t = player.currentPosition
+        Bookmarks.add(k, Bookmark(t, "Yer imi · ${fmtTime(t)}")); ui.bmVer++
+        toast("Yer imi eklendi: ${fmtTime(t)}")
+    }
+
+    // ---- ekran görüntüsü ----
+    fun screenshot() {
+        if (ui.vw == 0 || ui.vh == 0) { toast("Görüntü henüz hazır değil"); return }
+        val sv = playerView?.videoSurfaceView as? SurfaceView ?: run { toast("Ekran görüntüsü alınamadı"); return }
+        val s = minOf(1f, 1920f / maxOf(ui.vw, ui.vh))
+        val bmp = Bitmap.createBitmap((ui.vw * s).toInt().coerceAtLeast(2), (ui.vh * s).toInt().coerceAtLeast(2), Bitmap.Config.ARGB_8888)
+        ui.flash++
+        try {
+            PixelCopy.request(sv, bmp, { r ->
+                if (r == PixelCopy.SUCCESS) lifecycleScope.launch {
+                    val f = withContext(Dispatchers.IO) { MediaTools.saveImage(this@PlayerActivity, bmp, cleanTitle(ui.title)) }
+                    toast(if (f != null) "Kaydedildi: Resimler/Perde" else "Kaydedilemedi")
+                } else toast("Ekran görüntüsü alınamadı (korumalı içerik olabilir)")
+            }, Handler(mainLooper))
+        } catch (_: Exception) { toast("Ekran görüntüsü alınamadı") }
+    }
+
+    // ---- kesme / GIF ----
+    fun trim(start: Long, end: Long) {
+        val k = curKey() ?: return
+        if (!k.startsWith("/")) { toast("Kesme sadece telefondaki videolarda yapılabilir"); return }
+        ui.sheet = null; ui.busy = "Video kesiliyor"; ui.busyProgress = 0f
+        MediaTools.trim(this, k, start, end, { ui.busyProgress = it / 100f }) { f, err ->
+            ui.busy = null
+            toast(if (f != null) "Kaydedildi: Filmler/Perde/${f.name}" else "Kesilemedi: ${err ?: "bilinmeyen hata"}")
+        }
+    }
+
+    fun makeGif(start: Long, end: Long) {
+        val k = curKey() ?: return
+        if (!k.startsWith("/")) { toast("GIF sadece telefondaki videolardan yapılabilir"); return }
+        ui.sheet = null; ui.busy = "GIF hazırlanıyor"; ui.busyProgress = 0f
+        player.pause()
+        lifecycleScope.launch {
+            val f = MediaTools.gif(this@PlayerActivity, k, start, end) { ui.busyProgress = it }
+            ui.busy = null
+            toast(if (f != null) "GIF kaydedildi: Resimler/Perde" else "GIF yapılamadı")
+        }
+    }
+
+    // ---- sadece ses ----
+    fun audioOnly() {
+        Engine.audioOnly = true
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, true).build()
+        if (!player.isPlaying) player.play()
+        NowState.refresh()
+        leavingForAudio = true
+        startActivity(Intent(this, MainActivity::class.java).putExtra("openNow", true).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+        finish()
     }
 
     // ---- hareketler ----
@@ -466,8 +647,8 @@ class PlayerActivity : AppCompatActivity() {
             tapJob?.cancel(); lastTap = now
             val f = x / w
             when {
-                f < 0.35f -> { seekBy(-Prefs.seekStep * 1000L); showInd(Ind("rew", "−${Prefs.seekStep} sn"), 600) }
-                f > 0.65f -> { seekBy(Prefs.seekStep * 1000L); showInd(Ind("fwd", "+${Prefs.seekStep} sn"), 600) }
+                f < 0.35f -> doubleSeek(-1)
+                f > 0.65f -> doubleSeek(1)
                 else -> togglePlay()
             }
             return
@@ -476,13 +657,23 @@ class PlayerActivity : AppCompatActivity() {
         tapJob?.cancel()
         tapJob = lifecycleScope.launch {
             if (Prefs.gDouble) delay(280)
-            ui.showControls = !ui.showControls; ui.poke++
+            if (ui.tapSide == 0) { ui.showControls = !ui.showControls; ui.poke++ }
         }
+    }
+
+    private fun doubleSeek(side: Int) {
+        if (ui.tapSide != side) { ui.tapSide = side; ui.tapTotal = 0 }
+        ui.tapTotal += Prefs.seekStep
+        seekBy(side * Prefs.seekStep * 1000L)
+        playerView?.let { haptic(it) }
+        tapHideJob?.cancel()
+        tapHideJob = lifecycleScope.launch { delay(750); ui.tapSide = 0; ui.tapTotal = 0 }
     }
 
     private var dragStartVal = 0f
     private var seekStart = 0L
     private var lastLiveSeek = 0L
+    var seekPreview: Long? = null
 
     fun seekDragStart() {
         if (ui.casting) return
@@ -494,17 +685,18 @@ class PlayerActivity : AppCompatActivity() {
         val d = player.duration.takeIf { it > 0 } ?: return
         val span = minOf(d, 600_000L).coerceAtLeast(60_000L)
         val target = (seekStart + (frac * span).toLong()).coerceIn(0, d)
-        ui.seekPreview = target
+        seekPreview = target
         val diff = target - seekStart
         showInd(Ind("seek", "${if (diff >= 0) "+" else "−"}${fmtTime(kotlin.math.abs(diff))}\n${fmtTime(target)} / ${fmtTime(d)}"))
+        requestThumb(target)
         val now = SystemClock.uptimeMillis()
-        if (now - lastLiveSeek > 120) { lastLiveSeek = now; player.seekTo(target) }
+        if (now - lastLiveSeek > 150) { lastLiveSeek = now; player.seekTo(target) }
     }
     fun seekDragEnd() {
         if (ui.casting) return
         player.setSeekParameters(SeekParameters.EXACT)
-        ui.seekPreview?.let { player.seekTo(it) }
-        ui.seekPreview = null
+        seekPreview?.let { player.seekTo(it) }
+        seekPreview = null; requestThumb(null)
         showInd(ui.ind, 500)
     }
 
@@ -534,8 +726,7 @@ class PlayerActivity : AppCompatActivity() {
     fun setVolume(v: Float): Float {
         val c = v.coerceIn(0f, if (Prefs.boost) 2f else 1f)
         val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        val base = minOf(1f, c)
-        try { audio.setStreamVolume(AudioManager.STREAM_MUSIC, Math.round(base * max), 0) } catch (_: SecurityException) { }
+        try { audio.setStreamVolume(AudioManager.STREAM_MUSIC, Math.round(minOf(1f, c) * max), 0) } catch (_: SecurityException) { }
         val nb = maxOf(0f, c - 1f)
         if (nb != boostLevel) { boostLevel = nb; Engine.setBoost((nb * 1500).toInt()) }
         return c
@@ -554,6 +745,7 @@ class PlayerActivity : AppCompatActivity() {
         if (ui.casting || !player.isPlaying) return
         longPressing = true; speedBefore = ui.speed
         player.setPlaybackSpeed(2f); showInd(Ind("fast", "2× hız"))
+        playerView?.let { haptic(it) }
     }
     fun longEnd() {
         if (!longPressing) return
@@ -614,6 +806,19 @@ class PlayerActivity : AppCompatActivity() {
         ui.hasExtSub = false; ui.subOff = 0
     }
 
+    /** Online bulunan altyazıyı videonun yanına (yazılamazsa uygulama klasörüne) kaydedip yükler. */
+    fun useDownloadedSub(f: File) {
+        val k = curKey() ?: return
+        Prefs.setSub(k, Uri.fromFile(f).toString()); Prefs.setSubOff(k, 0)
+        reloadSub(); toast("Altyazı indirildi ve yüklendi")
+    }
+    fun subDownloadDir(): File {
+        val k = curKey()
+        val d = if (k != null && k.startsWith("/")) File(k).parentFile else null
+        return if (d != null && d.canWrite()) d else File(getExternalFilesDir(null) ?: filesDir, "altyazi")
+    }
+    fun subBaseName(): String = curKey()?.let { if (it.startsWith("/")) File(it).nameWithoutExtension else cleanTitle(ui.title) } ?: "altyazi"
+
     fun infoLines(): List<Pair<String, String>> {
         val l = ArrayList<Pair<String, String>>()
         val k = curKey() ?: ""
@@ -631,6 +836,9 @@ class PlayerActivity : AppCompatActivity() {
         }
         if (Engine.videoDecoder.isNotEmpty()) l += "Video çözücü" to Engine.videoDecoder + if (Engine.videoDecoder.startsWith("c2.android") || Engine.videoDecoder.startsWith("OMX.google")) " (yazılım)" else " (donanım)"
         if (Engine.audioDecoder.isNotEmpty()) l += "Ses çözücü" to Engine.audioDecoder
+        if (ui.chapters.isNotEmpty()) l += "Bölüm sayısı" to "${ui.chapters.size}"
+        val watched = Prefs.sp.getLong("sv:$k", 0)
+        if (watched > 0) l += "Toplam izleme" to fmtDur(watched)
         return l
     }
 
@@ -661,7 +869,7 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (Build.VERSION.SDK_INT < 31 && Prefs.autoPip && player.isPlaying && !ui.locked && !ui.casting) enterPip()
+        if (Build.VERSION.SDK_INT < 31 && Prefs.autoPip && player.isPlaying && !ui.locked && !ui.casting && !leavingForAudio) enterPip()
     }
 
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
@@ -679,7 +887,7 @@ class PlayerActivity : AppCompatActivity() {
         if (url == null) { toast("Wi-Fi adresi bulunamadı"); return }
         val name = ui.title.ifEmpty { nameOf(k) }
         val meta = CastMeta(CastMeta.MEDIA_TYPE_MOVIE).apply { putString(CastMeta.KEY_TITLE, name) }
-        val mime = when (name.substringAfterLast('.').lowercase()) { "mkv" -> "video/x-matroska"; "webm" -> "video/webm"; "m3u8" -> "application/x-mpegURL"; else -> "video/mp4" }
+        val mime = when (nameOf(k).substringAfterLast('.').lowercase()) { "mkv" -> "video/x-matroska"; "webm" -> "video/webm"; "m3u8" -> "application/x-mpegURL"; else -> "video/mp4" }
         val info = MediaInfo.Builder(url).setStreamType(MediaInfo.STREAM_TYPE_BUFFERED).setContentType(mime).setMetadata(meta).build()
         val req = MediaLoadRequestData.Builder().setMediaInfo(info).setAutoplay(true).setCurrentTime(player.currentPosition).build()
         s.remoteMediaClient?.load(req)
@@ -707,7 +915,7 @@ class PlayerActivity : AppCompatActivity() {
     override fun onStop() {
         super.onStop()
         Engine.savePos()
-        if (!isInPictureInPictureMode && !Prefs.bgPlay && !isChangingConfigurations && !ui.casting) player.pause()
+        if (!isInPictureInPictureMode && !Prefs.bgPlay && !isChangingConfigurations && !ui.casting && !Engine.audioOnly) player.pause()
     }
 
     fun closePlayer() {
@@ -725,6 +933,8 @@ class PlayerActivity : AppCompatActivity() {
         try { unregisterReceiver(pipReceiver) } catch (_: Exception) { }
         castCtx?.sessionManager?.removeSessionManagerListener(castListener, CastSession::class.java)
         controller?.let { MediaController.releaseFuture(it) }
+        val r = mmr; mmr = null
+        kotlinx.coroutines.CoroutineScope(serial).launch { try { r?.release() } catch (_: Exception) { } }
         super.onDestroy()
     }
 }

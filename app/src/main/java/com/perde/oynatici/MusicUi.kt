@@ -440,7 +440,7 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
         }
 
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            if (npView == 1) Column { Box(Modifier.weight(1f)) { LyricsView(lyrics.value, pos) { p.seekTo(it) } }
+            if (npView == 1) Column { Box(Modifier.weight(1f)) { LyricsView(lyrics.value.map { -1L to it.second }.filter { it.second.isNotBlank() }, pos) { } }
                 if (lyricsSrc.isNotEmpty()) Text(lyricsSrc, fontSize = 10.sp, color = Color.White.copy(alpha = 0.45f)) }
             else if (npView == 2) VizView(art, tint, NowState.playing)
             else Box(Modifier.fillMaxWidth().aspectRatio(1f).scale(artScale).shadow(30.dp, RoundedCornerShape(28.dp)).clip(RoundedCornerShape(28.dp))

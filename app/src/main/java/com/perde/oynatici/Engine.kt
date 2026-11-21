@@ -128,7 +128,7 @@ object Engine {
             override fun onIsPlayingChanged(isPlaying: Boolean) { if (!isPlaying) { savePos(); Stats.flush() } else ensureEffects() }
             override fun onEvents(player: Player, events: Player.Events) {
                 if (events.containsAny(Player.EVENT_IS_PLAYING_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_MEDIA_METADATA_CHANGED, Player.EVENT_TIMELINE_CHANGED)) {
-                    NowState.refresh(); appCtx?.let { PerdeWidget.update(it) }
+                    NowState.refresh(); appCtx?.let { PerdeWidget.update(it); MusicWidget.update(it); PlayTile.request(it) }
                 }
             }
             override fun onPositionDiscontinuity(old: Player.PositionInfo, new: Player.PositionInfo, reason: Int) {
@@ -239,7 +239,7 @@ object Engine {
         player = null
         abA = -1; abB = -1; sleepAt = 0; sleepEnd = false; audioOnly = false
         delay.delayMs = 0
-        NowState.refresh(); appCtx?.let { PerdeWidget.update(it) }
+        NowState.refresh(); appCtx?.let { PerdeWidget.update(it); MusicWidget.update(it); PlayTile.request(it) }
     }
 }
 

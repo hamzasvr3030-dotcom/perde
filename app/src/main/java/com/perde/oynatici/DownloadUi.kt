@@ -124,6 +124,7 @@ fun DownloadScreen(go: (Route) -> Unit) {
     }
 
     Page("İndir", null, actions = {
+        IconButton(onClick = { ctx.startActivity(android.content.Intent(ctx, BrowserActivity::class.java)) }) { Icon(Icons.Filled.Public, "Tarayıcı") }
         IconButton(onClick = { go(Route.DlHistory) }) { Icon(Icons.Filled.History, "Geçmiş") }
         IconButton(onClick = { accounts = true }) { Icon(Icons.Filled.AccountCircle, "Hesaplar") }
         IconButton(onClick = { settings = true }) { Icon(Icons.Filled.Tune, "İndirme ayarları") }
@@ -425,7 +426,7 @@ private fun JobRow(j: Job, compact: Boolean = false) {
             val sub = when (j.state) {
                 Job.RUN -> listOf("%${(j.progress * 100).toInt()}", j.phase, j.speed, j.eta).filter { it.isNotEmpty() }.joinToString(" · ")
                 Job.ERR -> j.error ?: "Hata"
-                Job.DONE -> "İndirildi · ${j.opts.label}" + (j.file?.let { " · " + fmtSize(File(it).length()) } ?: "")
+                Job.DONE -> "İndirildi · ${j.opts.label}" + (j.file?.let { " · " + fmtSize(File(it).length()) } ?: "") + (if (j.timing.isNotEmpty()) "\n" + j.timing else "")
                 else -> j.phase
             }
             Text(sub, color = when (j.state) { Job.ERR -> BAD; Job.DONE, Job.SKIP -> OK; else -> Muted }, fontSize = 12.sp, maxLines = 2)
@@ -587,7 +588,9 @@ fun DlSettingsContent() {
         Text("İndirme ayarları", fontSize = 21.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp))
         SetSwitch("Sadece Wi-Fi'de indir", "Mobil veride indirmeler bekletilir", DlPrefs.wifiOnly) { DlPrefs.wifiOnly = it; Dl.pump() }
         SetChoice("Aynı anda indirme", listOf("1", "2", "3", "4", "5", "6"), (DlPrefs.parallel - 1).coerceIn(0, 5)) { DlPrefs.parallel = it + 1; ver++; Dl.pump() }
-        SetSwitch("Hızlı indirme", "Dosyayı parçalara bölüp aynı anda indirir (2–4 kat hız)", DlPrefs.fast) { DlPrefs.fast = it }
+        SetSwitch("Hızlı indirme", "YouTube dosyasını 16 parçaya bölüp aynı anda indirir", DlPrefs.fast) { DlPrefs.fast = it }
+        SetSwitch("Akıllı kalite", "Wi-Fi'de seçtiğin kalite, mobil veride en fazla aşağıdaki kalite (izlerken de)", DlPrefs.smartQuality) { DlPrefs.smartQuality = it }
+        SetChoice("Mobil veride en fazla", listOf("360p", "480p", "720p"), listOf(360, 480, 720).indexOf(DlPrefs.mobileHeight).coerceAtLeast(1)) { DlPrefs.mobileHeight = listOf(360, 480, 720)[it]; ver++ }
         SetChoice("Hız sınırı", DlPrefs.RATES, DlPrefs.rate) { DlPrefs.rate = it; ver++ }
         SetSwitch("Tekrar indirmeyi önle", "Daha önce indirilen video atlanır", DlPrefs.archive) { DlPrefs.archive = it }
         SetSwitch("Panodaki bağlantıyı algıla", "Bağlantı kopyalayıp Kadraj'ı açınca indirmeyi önerir", DlPrefs.clipboard) { DlPrefs.clipboard = it }

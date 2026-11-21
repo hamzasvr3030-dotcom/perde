@@ -777,7 +777,6 @@ private fun MoreSheet(a: PlayerActivity) {
         Tile(Icons.Filled.Lock, "Ekran kilidi") { a.lock() }
         Tile(Icons.Filled.ChildCare, "Çocuk kilidi") { a.kidsLock() }
         Tile(Icons.Filled.Info, "Video bilgisi") { ui.sheet = Sheet.INFO }
-        if (a.isLocal) Tile(Icons.Filled.Theaters, "Film / dizi bilgisi") { ui.sheet = Sheet.META }
         Tile(Icons.Filled.Memory, if (decSw) "Çözücü: yazılım" else "Çözücü: donanım", decSw) {
             decSw = !decSw; Prefs.decoderSw = decSw; a.toast("Çözücü ayarı oynatıcı yeniden açılınca geçerli olur")
         }

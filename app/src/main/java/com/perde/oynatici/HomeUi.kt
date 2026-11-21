@@ -230,7 +230,6 @@ fun HomeScreen(vm: LibVM, go: (Route) -> Unit) {
                         }
                     }
                 }
-                item { FilmsRow(vm, { v -> openInFolder(ctx, vm, v) }, { v -> metaFor = v }) }
                 item { SectionHeader("Son eklenenler") }
                 item {
                     LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -446,7 +445,6 @@ fun VideoActions(v: Video, vm: LibVM, dismiss: () -> Unit, play: () -> Unit) {
             ActionItem(Icons.Filled.DriveFileMove, "Başka klasöre taşı") { dialog = 6 }
             ActionItem(Icons.Filled.FileCopy, "Başka klasöre kopyala") { dialog = 7 }
             ActionItem(Icons.Filled.Lock, "Gizli klasöre taşı") { dialog = 4 }
-            ActionItem(Icons.Filled.Theaters, "Film / dizi bilgisi") { dialog = 8 }
             ActionItem(Icons.Filled.Info, "Özellikler") { dialog = 3 }
             ActionItem(Icons.Filled.Delete, "Sil", Color(0xFFFF6B6B)) { dialog = 2 }
         }
@@ -483,7 +481,6 @@ fun VideoActions(v: Video, vm: LibVM, dismiss: () -> Unit, play: () -> Unit) {
             confirmButton = { TextButton(onClick = { bg({ Library.moveToPrivate(ctx, v.path, v.uri) }, "Gizli klasöre taşındı", "Taşınamadı") }) { Text("Taşı") } },
             dismissButton = { TextButton(onClick = dismiss) { Text("Vazgeç") } })
         5 -> PlaylistPickerDialog(listOf(v.key), dismiss)
-        8 -> MetaSheet(v, dismiss)
         6, 7 -> FolderPickerDialog(vm, if (dialog == 7) "Kopyalanacak klasör" else "Taşınacak klasör", dismiss) { dir ->
             val copy = dialog == 7
             toast(ctx, if (copy) "Kopyalanıyor…" else "Taşınıyor…")

@@ -33,6 +33,9 @@ object Web {
     }
 
     @Volatile private var ready = false
+    @Volatile private var appCtx: Context? = null
+    /** Mobil veride (ölçülü bağlantı) mı? Dl tarafından güncellenir. */
+    @Volatile var metered = false
     private val cache = ConcurrentHashMap<String, Pair<Long, Analysis>>()
     private val streamCache = ConcurrentHashMap<String, Pair<Long, Stream>>()
     /** Akış sunucusu → yt-dlp'nin istediği HTTP başlıkları (User-Agent, Referer, Cookie…). */
@@ -40,6 +43,8 @@ object Web {
 
     private val DIRECT = VIDEO_EXT + AUDIO_EXT + setOf("m3u8", "mpd")
     const val PLAY_FMT = "bv*[height<=1080][vcodec!^=av01]+ba/b[height<=1080]/bv*+ba/b"
+    /** Akıllı kalite: mobil veride izlerken en fazla 480p. */
+    fun playFmt(): String = if (DlPrefs.smartQuality && metered) "bv*[height<=${DlPrefs.mobileHeight}][vcodec!^=av01]+ba/b[height<=${DlPrefs.mobileHeight}]/bv*+ba/b" else PLAY_FMT
     const val FALLBACK_FMT = "b[height<=720]/bv*[height<=720][vcodec^=avc1]+ba[ext=m4a]/bv*[height<=720]+ba/b/bv*+ba"
 
     fun isHttp(u: String) = u.startsWith("http://", true) || u.startsWith("https://", true)
@@ -96,6 +101,7 @@ object Web {
     fun init(ctx: Context) {
         if (ready) return
         val app = ctx.applicationContext
+        appCtx = app
         YoutubeDL.getInstance().init(app)
         try { FFmpeg.getInstance().init(app) } catch (_: Exception) { }
         ready = true
@@ -120,7 +126,15 @@ object Web {
     fun addCookies(ctx: Context, r: YoutubeDLRequest) {
         val f = cookieFile(ctx)
         if (f.exists() && f.length() > 40) r.addOption("--cookies", f.absolutePath)
+        // YouTube'un bulmaca (imza/n) çözümleri kalıcı önbellekte tutulsun: her indirmede yeniden çözülmesin
+        r.addOption("--cache-dir", File(ctx.filesDir, "ytdlp-cache").apply { mkdirs() }.absolutePath)
     }
+
+    // ---------------- analiz bilgisini indirmede tekrar kullanma ----------------
+    fun infoFile(ctx: Context, url: String) = File(File(ctx.cacheDir, "info").apply { mkdirs() }, md5(url.trim()) + ".json")
+    private fun md5(s: String) = java.security.MessageDigest.getInstance("MD5").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }
+    /** 2 saatten yeni analiz dosyası varsa döner (akış adresleri ~6 saat geçerli). */
+    fun freshInfo(ctx: Context, url: String): File? = infoFile(ctx, url).takeIf { it.exists() && System.currentTimeMillis() - it.lastModified() < 2 * 3600_000L }
 
     fun explain(e: Throwable): String {
         val m = (e.message ?: e.toString())
@@ -210,11 +224,12 @@ object Web {
         cache[url]?.let { (t, a) -> if (System.currentTimeMillis() - t < 20 * 60_000L) return@withContext a }
         val r = YoutubeDLRequest(url)
         r.addOption("--flat-playlist")
-        r.addOption("-f", PLAY_FMT)
+        r.addOption("-f", playFmt())
         val pl = playlistOf(url)
         if (pl != null) r.addOption("--no-playlist")
         r.addOption("-I", if (isChannel(url)) "1:200" else "1:500")
         val o = runJson(ctx, r)
+        if (o.optString("_type") != "playlist" && !o.has("entries")) try { infoFile(ctx, raw).writeText(o.toString()) } catch (_: Exception) { }
         val a: Analysis = if (o.optString("_type") == "playlist" || o.has("entries")) {
             val es = entries(o)
             Analysis.Multi(url, o.optString("title").ifEmpty { site(url) }, o.optString("uploader").ifEmpty { o.optString("channel") }.ifEmpty { null },
@@ -234,7 +249,7 @@ object Web {
         streamCache[key]?.let { (t, s) -> if (System.currentTimeMillis() - t < 20 * 60_000L) return@withContext s }
         val r = YoutubeDLRequest(url)
         r.addOption("--no-playlist")
-        r.addOption("-f", if (fallback) FALLBACK_FMT else PLAY_FMT)
+        r.addOption("-f", if (fallback) FALLBACK_FMT else playFmt())
         val s = streamFrom(runJson(ctx, r), url)
         streamCache[key] = System.currentTimeMillis() to s
         s

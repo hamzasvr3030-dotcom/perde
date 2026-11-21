@@ -50,6 +50,8 @@ object DlPrefs {
     var rate by IntP("dlRate", 0)          // 0 sınırsız, 1: 1 MB/sn, 2: 2 MB/sn, 3: 5 MB/sn
     var archive by BoolP("dlArch", true)
     var clipboard by BoolP("dlClip", true)
+    var smartQuality by BoolP("dlSmartQ", true)
+    var mobileHeight by IntP("dlMobH", 480)
     var lastClip by StrP("dlLastClip", "")
     val RATES = listOf("Sınırsız", "1 MB/sn", "2 MB/sn", "5 MB/sn")
     val HEIGHTS = listOf(2160, 1440, 1080, 720, 480, 360)
@@ -90,6 +92,9 @@ class Job(
     // ilerleme hesabı
     var fileIdx = 0
     var lastRaw = 0f
+    // süre ölçümü: nerede zaman kaybediliyor?
+    var tStart = 0L; var tFirst = 0L; var tDlEnd = 0L; var tEnd = 0L; var bytes = 0L
+    var timing by mutableStateOf("")
     val active get() = state == Q || state == RUN || state == WAIT || state == SCHED
 
     fun json(): JSONObject = JSONObject().put("id", id).put("u", url).put("t", title).put("th", thumb ?: "").put("o", opts.json())
@@ -114,7 +119,7 @@ object Dl {
     private val main by lazy { Handler(Looper.getMainLooper()) }
     private val pool = Executors.newCachedThreadPool()
     private var app: Context? = null
-    @Volatile private var unmetered = true
+    @Volatile var unmetered = true; private set
     @Volatile private var online = true
 
     // ---------------- başlat / kalıcılık ----------------
@@ -129,11 +134,12 @@ object Dl {
             cm.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
                 override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
                     unmetered = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED); online = true
+                    Web.metered = !unmetered
                     main.post { netBack() }
                 }
                 override fun onLost(network: Network) { online = false }
             })
-            cm.getNetworkCapabilities(cm.activeNetwork)?.let { unmetered = it.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) }
+            cm.getNetworkCapabilities(cm.activeNetwork)?.let { unmetered = it.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED); Web.metered = !unmetered }
         } catch (_: Exception) { }
         main.post { pump(); jobs.filter { it.state == Job.SCHED }.minOfOrNull { it.at }?.let { DlAlarm.schedule(ctx, it) } }
     }
@@ -342,8 +348,17 @@ object Dl {
     private val speedRx = Regex("at\\s+~?\\s*([\\d.]+)\\s*([KMG]?)i?B/s")
     private val etaRx = Regex("ETA\\s+(\\d+:\\d+(?::\\d+)?)")
 
+    private val sizeRx = Regex("of\\s+~?\\s*([\\d.]+)\\s*([KMG]?)i?B")
+
     internal fun onProgress(j: Job, raw: Float, line: String) {
         if (raw < 0) return
+        val now = System.currentTimeMillis()
+        if (j.tFirst == 0L) j.tFirst = now
+        if (raw >= 100f && (j.opts.audio || j.fileIdx >= 1 || j.tDlEnd == 0L)) j.tDlEnd = now
+        if (raw >= 100f) sizeRx.find(line)?.let { m ->
+            val v = m.groupValues[1].toFloatOrNull() ?: 0f
+            j.bytes += (v * when (m.groupValues[2]) { "K" -> 1024f; "M" -> 1048576f; "G" -> 1073741824f; else -> 1f }).toLong()
+        }
         if (raw < j.lastRaw - 30f) j.fileIdx++      // yeni dosyaya geçildi (görüntü → ses)
         j.lastRaw = raw
         val f = raw / 100f
@@ -361,14 +376,23 @@ object Dl {
             j.speed = if (mb >= 1f) String.format(Locale.forLanguageTag("tr"), "%.1f MB/sn", mb) else String.format(Locale.forLanguageTag("tr"), "%.0f KB/sn", mb * 1024)
         }
         j.eta = etaRx.find(line)?.groupValues?.get(1)?.let { "$it kaldı" } ?: ""
+        // YouTube yavaşlatıyorsa kullanıcıya söyle
+        if (j.tFirst > 0 && now - j.tFirst > 20_000 && j.speed.endsWith("KB/sn") && (j.speed.substringBefore(' ').replace(',', '.').toFloatOrNull() ?: 999f) < 200f && "youtu" in j.url)
+            j.phase += " · YouTube yavaşlatıyor"
+
     }
 
     private fun build(c: Context, j: Job, subs: Boolean, pathFile: File): YoutubeDLRequest {
         val o = j.opts
-        val r = YoutubeDLRequest(j.url)
+        val info = if (!j.url.startsWith("ytsearch")) Web.freshInfo(c, j.url) else null
+        val r = if (info != null) YoutubeDLRequest(emptyList<String>()).also { it.addOption("--load-info-json", info.absolutePath) } else YoutubeDLRequest(j.url)
         r.addOption("--no-playlist"); r.addOption("--no-mtime"); r.addOption("--newline"); r.addOption("--progress")
         r.addOption("--retries", "10"); r.addOption("--fragment-retries", "10"); r.addOption("--no-warnings")
-        if (DlPrefs.fast) { r.addOption("-N", "4"); r.addOption("--http-chunk-size", "10M") }
+        if (DlPrefs.fast) {
+            // YouTube dosyalarını küçük parçalara bölüp 16'sını aynı anda indir (yavaşlatmaya karşı en etkili yöntem)
+            if (info == null && "youtu" in j.url) r.addOption("--extractor-args", "youtube:formats=dashy")
+            r.addOption("-N", "16"); r.addOption("--http-chunk-size", "10M")
+        }
         listOf("", "1M", "2M", "5M").getOrElse(DlPrefs.rate) { "" }.takeIf { it.isNotEmpty() }?.let { r.addOption("-r", it) }
         if (DlPrefs.archive) r.addOption("--download-archive", archiveFile(c).absolutePath)
         Web.addCookies(c, r)
@@ -390,7 +414,7 @@ object Dl {
             if (o.sponsor) r.addOption("--sponsorblock-remove", "sponsor,selfpromo,interaction,music_offtopic")
             r.addOption("-o", j.dir + "/" + (if (o.smart || j.forceArtist != null) "%(artist,uploader)s - %(title).80B.%(ext)s" else "%(title).90B.%(ext)s"))
         } else {
-            val h = o.height
+            val h = if (DlPrefs.smartQuality && !unmetered) minOf(o.height, DlPrefs.mobileHeight) else o.height
             val av1 = if (h > 1080) "" else "[vcodec!^=av01]"
             r.addOption("-f", "bv*[height<=$h][ext=mp4]$av1+ba[ext=m4a]/bv*[height<=$h]$av1+ba/b[height<=$h]/bv*+ba/b")
             r.addOption("--merge-output-format", "mp4")
@@ -408,6 +432,7 @@ object Dl {
     private fun run(c: Context, j: Job) {
         try { Web.init(c) } catch (e: Exception) { j.state = Job.ERR; j.error = "İndirme motoru başlatılamadı"; return }
         val started = System.currentTimeMillis()
+        j.tStart = started; j.tFirst = 0; j.tDlEnd = 0; j.bytes = 0; j.timing = ""
         val pathFile = File(c.cacheDir, "dlpath_${j.id}.txt").apply { delete() }
         var subs = j.opts.subs && !j.opts.audio
         var attempt = 0
@@ -437,10 +462,17 @@ object Dl {
                     Library.scan(c, path)
                     File(path).parentFile?.listFiles()?.filter { it.extension.lowercase() in setOf("jpg", "webp", "png") && it.nameWithoutExtension == File(path).nameWithoutExtension }?.forEach { it.delete() }
                     j.file = path; j.progress = 1f; j.state = Job.DONE; j.speed = ""; j.eta = ""
+                    j.tEnd = System.currentTimeMillis()
+                    val size = File(path).length().takeIf { it > 0 } ?: j.bytes
+                    val prep = ((if (j.tFirst > 0) j.tFirst else j.tEnd) - j.tStart) / 1000
+                    val dlSec = (((if (j.tDlEnd > 0) j.tDlEnd else j.tEnd) - (if (j.tFirst > 0) j.tFirst else j.tStart)) / 1000f).coerceAtLeast(0.5f)
+                    val post = ((j.tEnd - (if (j.tDlEnd > 0) j.tDlEnd else j.tEnd)) / 1000)
+                    j.timing = "Hazırlık ${prep} sn · ort. " + String.format(java.util.Locale.forLanguageTag("tr"), "%.1f MB/sn", size / 1048576f / dlSec) + " · işleme ${post} sn"
                     if (j.title.isBlank() || j.title.startsWith("http")) j.title = File(path).nameWithoutExtension
                     return
                 }
                 err != null && subs && "subtitle" in out.lowercase() && attempt < 3 -> { subs = false; continue }   // altyazı yüzünden düştüyse altyazısız dene
+                err != null && attempt < 3 && Web.freshInfo(c, j.url) != null && !Web.isNetworkError(out) -> { Web.infoFile(c, j.url).delete(); continue }   // eski analiz bilgisi: adresle tekrar
                 err != null -> {
                     j.netErr = Web.isNetworkError(out)
                     j.error = if (j.netErr) "Bağlantı koptu — internet gelince kendiliğinden devam edecek" else Web.explain(err)

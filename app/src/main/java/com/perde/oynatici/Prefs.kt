@@ -66,7 +66,7 @@ object Prefs {
     var crossfade by IntP("xfade", 0)        // saniye: 0 kapalı
     var skipSilence by BoolP("skipSil", false)
     var onlineLyrics by BoolP("onLyr", true)
-    var autoMeta by BoolP("autoMeta", true)
+    var autoMeta by BoolP("autoMeta", false)
 
     // Diğer
     var pinHash by StrP("pin", "")

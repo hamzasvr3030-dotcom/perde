@@ -100,6 +100,31 @@
         </service>
 
         <activity
+            android:name=".BrowserActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden"
+            android:windowSoftInputMode="adjustResize" />
+
+        <service android:name=".PlayTile" android:exported="true" android:label="Kadraj çal"
+            android:icon="@drawable/ic_play" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
+            <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="false" />
+        </service>
+        <service android:name=".LinkTile" android:exported="true" android:label="Bağlantıyı indir"
+            android:icon="@drawable/ic_download" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
+        </service>
+
+        <receiver android:name=".MusicWidget" android:exported="true" android:label="Kadraj müzik">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_music_info" />
+        </receiver>
+        <receiver android:name=".RecentWidget" android:exported="true" android:label="Kadraj son eklenenler">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_recent_info" />
+        </receiver>
+
+        <activity
             android:name=".ShortsActivity"
             android:exported="false"
             android:screenOrientation="portrait"

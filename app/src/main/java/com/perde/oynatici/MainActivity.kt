@@ -107,6 +107,7 @@ object AppState {
     var openNet by mutableIntStateOf(0)
     var clipUrl by mutableStateOf<String?>(null)
     var eqSheet by mutableStateOf(false)
+    var forceClip = false
 }
 
 class LibVM(app: Application) : AndroidViewModel(app) {
@@ -120,6 +121,7 @@ class LibVM(app: Application) : AndroidViewModel(app) {
             val (v, s) = withContext(Dispatchers.IO) { Library.load(getApplication()) to Music.load(getApplication()) }
             videos = v; songs = s
             loading = false; ver++
+            RecentWidget.refresh(getApplication())
         }
     }
     fun bump() { ver++ }
@@ -156,10 +158,19 @@ class MainActivity : AppCompatActivity() {
         if (i.getBooleanExtra("openNow", false)) AppState.showNow = true
         if (i.action == Intent.ACTION_SEND) Web.extractUrl(i.getStringExtra(Intent.EXTRA_TEXT))?.let { AppState.sharedUrl = it; AppState.openNet++ }
         if (i.getBooleanExtra("openDownloads", false)) AppState.openNet++
+        i.getIntExtra("tab", -1).takeIf { it in 0..4 }?.let { AppState.tab = it; AppState.showNow = false }
+        if (i.getBooleanExtra("fromClipTile", false)) AppState.forceClip = true
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && AppState.forceClip) {
+            AppState.forceClip = false
+            val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            val u = Web.extractUrl(try { cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString() } catch (_: Exception) { null })
+            if (u != null) { DlPrefs.lastClip = u; AppState.sharedUrl = u; AppState.openNet++ } else toast(this, "Panoda bağlantı yok")
+            return
+        }
         if (!hasFocus || !DlPrefs.clipboard || AppState.clipUrl != null) return
         try {
             val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager

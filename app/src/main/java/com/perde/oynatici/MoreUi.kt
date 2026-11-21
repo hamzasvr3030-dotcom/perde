@@ -46,11 +46,14 @@ private fun NetCard(icon: ImageVector, title: String, sub: String, onClick: () -
 
 @Composable
 fun NetScreen(go: (Route) -> Unit) {
+    val ctx = LocalContext.current
     val servers = remember { Smb.servers() }
     val ip = remember { LocalServer.ip() }
     Page("Ağ", null) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             NetCard(Icons.Filled.Download, "Bağlantı aç ve indir", "YouTube, Instagram, TikTok, Spotify listeleri ve desteklenen diğer kaynaklardan oynatma veya indirme.") { AppState.tab = 2 }
+            NetCard(Icons.Filled.Public, "Tarayıcı", "Herhangi bir sitede gez, sayfadaki videoyu yakalayıp oynat veya indir.") {
+                ctx.startActivity(android.content.Intent(ctx, BrowserActivity::class.java)) }
             NetCard(Icons.Filled.Computer, "Ağ klasörleri (SMB)", if (servers.isEmpty()) "Bilgisayardaki paylaşılan klasörlerden dosyaları indirmeden izle." else "${servers.size} kayıtlı sunucu · " + servers.joinToString { it.title }.take(60)) { go(Route.SmbList) }
             NetCard(Icons.Filled.Wifi, "Wi-Fi aktarım", "Bilgisayardan telefona veya telefondan bilgisayara dosya aktar." + (ip?.let { "\nTelefonun adresi: $it" } ?: "")) { go(Route.Transfer) }
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Brush.linearGradient(listOf(AccentDeep, Accent.copy(alpha = 0.35f)))).padding(20.dp)) {
@@ -215,7 +218,6 @@ fun SettingsPage(vm: LibVM, section: Int, back: () -> Unit) {
                             GroupSwitch(Icons.Filled.GridView, "Izgara görünümü", "Videoları kart olarak göster", Prefs.grid) { Prefs.grid = it }
                             SetChoice("Sıralama", listOf("Ada göre", "Tarihe göre", "Boyuta göre", "Süreye göre"), Prefs.sortBy) { Prefs.sortBy = it; ver++ }
                             GroupSwitch(Icons.Filled.SwapVert, "Ters sırala", null, Prefs.sortDesc) { Prefs.sortDesc = it }
-                            GroupSwitch(Icons.Filled.Theaters, "Film/dizi bilgilerini otomatik bul", "40 dk'dan uzun videolar için afiş ve özet", Prefs.autoMeta) { Prefs.autoMeta = it }
                             GroupSwitch(Icons.Filled.Delete, "Silinenleri çöp kutusuna taşı", "30 gün içinde geri alınabilir", Prefs.useTrash, last = true) { Prefs.useTrash = it }
                         }
                     }
@@ -232,8 +234,7 @@ fun SettingsPage(vm: LibVM, section: Int, back: () -> Unit) {
                         Group("Bileşenler") {
                             GroupRow(Icons.Filled.Movie, "Oynatıcı", "Media3 (ExoPlayer) + FFmpeg ses çözücü", chevron = false) {}
                             GroupRow(Icons.Filled.Download, "İndirme motoru", "yt-dlp $yt", chevron = false) {}
-                            GroupRow(Icons.Filled.Lyrics, "Şarkı sözleri", "LRCLIB", chevron = false) {}
-                            GroupRow(Icons.Filled.Theaters, "Film ve dizi bilgileri", "Vikipedi, TVmaze", chevron = false, last = true) {}
+                            GroupRow(Icons.Filled.Lyrics, "Şarkı sözleri", "LRCLIB", chevron = false, last = true) {}
                         }
                         Group("Bakım") {
                             GroupRow(Icons.Filled.SystemUpdate, "Güncellemeleri denetle") {

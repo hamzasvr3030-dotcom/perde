@@ -45,9 +45,11 @@ object Music {
         )
         val appDir = (ctx.getExternalFilesDir(null) ?: ctx.filesDir).absolutePath
         try {
+            val hid = Prefs.set(Library.HIDDEN)
             ctx.contentResolver.query(base, proj, "${MediaStore.Audio.Media.DURATION} >= 20000", null, null)?.use { c ->
                 while (c.moveToNext()) {
                     val path = c.getString(1) ?: continue
+                    if (Library.isHiddenPath(path, hid)) continue
                     if (path.startsWith(appDir)) continue
                     val id = c.getLong(0)
                     fun clean(s: String?, d: String) = s?.takeIf { it.isNotBlank() && it != "<unknown>" } ?: d

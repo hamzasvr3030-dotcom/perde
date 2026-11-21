@@ -230,19 +230,43 @@ fun SetChoice(title: String, options: List<String>, selected: Int, onChange: (In
 
 // ---------------- gizlenen klasörler ----------------
 @Composable
-fun HiddenFoldersScreen(vm: LibVM, back: () -> Unit) {
-    var hidden by remember { mutableStateOf(Prefs.set(Library.HIDDEN).toList().sorted()) }
-    Page("Gizlenen klasörler", back) {
-        if (hidden.isEmpty()) Empty(Icons.Filled.Visibility, "Gizlenmiş klasör yok.\nBir klasörün menüsünden \"Listeden gizle\" diyebilirsin.")
-        else LazyColumn {
-            items(hidden) { p ->
-                ListItem(headlineContent = { Text(File(p).name) }, supportingContent = { Text(p, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    leadingContent = { Icon(Icons.Filled.FolderOff, null, tint = Muted) },
-                    trailingContent = { TextButton(onClick = { Prefs.toggleIn(Library.HIDDEN, p); hidden = Prefs.set(Library.HIDDEN).toList().sorted(); vm.bump() }) { Text("Göster") } },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent))
+fun HiddenFoldersScreen(vm: LibVM, go: (Route) -> Unit, back: () -> Unit) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var unlocked by remember { mutableStateOf(Prefs.pinHash.isEmpty() || HiddenLock.open) }
+    var hidden by remember { mutableStateOf<List<Pair<String, Int>>?>(null) }
+    fun load() { scope.launch { hidden = withContext(Dispatchers.IO) { Prefs.set(Library.HIDDEN).filter { File(it).isDirectory }.sorted().map { it to Library.hiddenList(it).size } } } }
+    LaunchedEffect(unlocked) { if (unlocked) load() }
+    Page("Gizlenen klasörler", back, actions = { if (unlocked && Prefs.pinHash.isNotEmpty()) IconButton(onClick = { HiddenLock.open = false; unlocked = false }) { Icon(Icons.Filled.Lock, "Kilitle") } }) {
+        val h = hidden
+        when {
+            !unlocked -> PinEntry(false, {}) { p -> if (hashPin(p) == Prefs.pinHash) { HiddenLock.open = true; unlocked = true; true } else false }
+            h == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Accent) }
+            h.isEmpty() -> Empty(Icons.Filled.Visibility, "Gizlenmiş klasör yok.\nBir klasöre basılı tutup \"Gizle\" diyebilirsin. Gizlenen klasör galeride, dosya yöneticisinde ve diğer uygulamalarda görünmez; yalnızca burada görünür.")
+            else -> LazyColumn {
+                if (Prefs.pinHash.isEmpty()) item { Text("İpucu: Gizli klasör için PIN koyarsan bu sayfa da kilitlenir.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(16.dp)) }
+                items(h, key = { it.first }) { (p, n) ->
+                    ListItem(headlineContent = { Text(File(p).name.trimStart('.')) }, supportingContent = { Text("$n dosya") },
+                        leadingContent = { Icon(Icons.Filled.FolderOff, null, tint = Accent) },
+                        trailingContent = { TextButton(onClick = { scope.launch { withContext(Dispatchers.IO) { Library.unhideFolder(ctx, p) }; toast(ctx, "Klasör tekrar görünür"); load(); vm.reload() } }) { Text("Göster") } },
+                        modifier = Modifier.clickable { go(Route.HiddenFolderR(p)) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent))
+                }
             }
         }
     }
+}
+
+object HiddenLock { var open = false }
+
+@Composable
+fun HiddenFolderScreen(vm: LibVM, path: String, back: () -> Unit) {
+    val ctx = LocalContext.current
+    var list by remember { mutableStateOf<List<Video>?>(null) }
+    LaunchedEffect(path) { list = withContext(Dispatchers.IO) { Library.hiddenList(path) } }
+    val l = list
+    if (l == null) Page(File(path).name.trimStart('.'), back) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Accent) } }
+    else VideoList(l, vm, File(path).name.trimStart('.'), back) { i -> playKeys(ctx, l.map { it.key }, i) }
 }
 
 // ---------------- çöp kutusu ----------------

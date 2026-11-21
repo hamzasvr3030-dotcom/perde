@@ -79,9 +79,11 @@ object Library {
         )
         val appDir = (ctx.getExternalFilesDir(null) ?: ctx.filesDir).absolutePath
         try {
+            val hid = Prefs.set(Library.HIDDEN)
             ctx.contentResolver.query(base, proj, null, null, null)?.use { c ->
                 while (c.moveToNext()) {
                     val path = c.getString(1) ?: continue
+                    if (Library.isHiddenPath(path, hid)) continue
                     if (path.startsWith(appDir)) continue
                     val id = c.getLong(0)
                     val f = File(path)
@@ -97,6 +99,9 @@ object Library {
     }
 
     fun byKey(k: String) = cache.firstOrNull { it.key == k }
+
+    /** Gizli (nokta ile başlayan) klasörler ya da gizlenen klasörlerin içindeki dosyalar. */
+    fun isHiddenPath(path: String, hid: Set<String>): Boolean = "/." in path || hid.any { path.startsWith("$it/") }
 
     fun folders(videos: List<Video>, includeHidden: Boolean = false): List<Folder> {
         val hidden = Prefs.set(HIDDEN)
@@ -236,6 +241,60 @@ object Library {
         if (ok) { Prefs.moveKey(f.path, dest.path); scan(ctx, dest.path) }
         return ok
     }
+
+    // ---------- gerçekten gizleme: klasör telefonun hiçbir yerinde (galeri, dosyalar, diğer oynatıcılar) görünmez ----------
+    private val SYSTEM_DIRS = setOf("dcim", "download", "movies", "music", "pictures", "documents", "android", "alarms",
+        "notifications", "podcasts", "ringtones", "recordings", "audiobooks")
+    private fun storageRoot() = Environment.getExternalStorageDirectory().absolutePath
+    /** Sistem klasörleri (DCIM, Download, Camera…) yeniden adlandırılmaz; yalnızca .nomedia ile gizlenir. */
+    private fun protectedDir(d: File) = d.absolutePath == storageRoot() ||
+        (d.parentFile?.absolutePath == storageRoot() && d.name.lowercase(Locale.ROOT) in SYSTEM_DIRS) ||
+        (d.parentFile?.name.equals("DCIM", true))
+    private fun filesUnder(d: File) = d.walkTopDown().filter { it.isFile }.map { it.path }.toList()
+
+    /** Klasörü ".Ad" olarak yeniden adlandırır + .nomedia koyar, medya kütüphanesinden düşürür. Yeni yolu döner. */
+    fun hideFolder(ctx: Context, path: String): String {
+        val d = File(path)
+        if (!d.isDirectory) { Prefs.putSet(HIDDEN, Prefs.set(HIDDEN) + path); return path }
+        val old = filesUnder(d)
+        var target = d
+        if (!protectedDir(d) && !d.name.startsWith(".")) {
+            val n = File(d.parentFile, "." + d.name)
+            if (!n.exists() && d.renameTo(n)) target = n
+        }
+        try { File(target, ".nomedia").createNewFile() } catch (_: Exception) { }
+        if (target != d) old.forEach { Prefs.moveKey(it, target.path + it.substring(d.path.length)) }
+        Prefs.putSet(HIDDEN, Prefs.set(HIDDEN) - path + target.path)
+        if (target != d) Prefs.putSet(PINNED, Prefs.set(PINNED) - path)
+        // eski kayıtları medya kütüphanesinden sil (dosyanın kendisine dokunmadan)
+        scan(ctx, *(old + (if (target != d) emptyList() else filesUnder(target))).toTypedArray(), d.path)
+        return target.path
+    }
+
+    fun unhideFolder(ctx: Context, path: String): String {
+        val d = File(path)
+        Prefs.putSet(HIDDEN, Prefs.set(HIDDEN) - path)
+        if (!d.isDirectory) return path
+        File(d, ".nomedia").delete()
+        var target = d
+        if (d.name.startsWith(".") && d.name.length > 1) {
+            val n = File(d.parentFile, d.name.trimStart('.'))
+            if (!n.exists() && d.renameTo(n)) target = n
+        }
+        if (target != d) filesUnder(target).forEach { Prefs.moveKey(d.path + it.substring(target.path.length), it) }
+        scan(ctx, *filesUnder(target).toTypedArray())
+        return target.path
+    }
+
+    /** Eski sürümde yalnızca listeden gizlenenleri de gerçekten gizle. */
+    fun migrateHidden(ctx: Context) {
+        Prefs.set(HIDDEN).forEach { p -> val d = File(p); if (d.isDirectory && !File(d, ".nomedia").exists()) hideFolder(ctx, p) }
+    }
+
+    fun hiddenList(path: String): List<Video> =
+        (File(path).listFiles() ?: emptyArray()).filter { it.isFile && (isVideoName(it.name) || isAudioName(it.name)) }.map { f ->
+            Video(-1, Uri.fromFile(f), f.path, f.name, f.parent ?: "", probeDuration(f.path), f.length(), 0, 0, f.lastModified() / 1000, null)
+        }.sortedWith(compareBy(NaturalOrder) { it.title })
 
     fun privateList(ctx: Context): List<Video> =
         (privateDir(ctx).listFiles() ?: emptyArray()).filter { it.isFile && (isVideoName(it.name) || isAudioName(it.name)) }.map { f ->

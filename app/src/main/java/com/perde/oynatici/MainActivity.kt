@@ -98,6 +98,7 @@ sealed interface Route {
     data object TrashR : Route
     data object StatsR : Route
     data object HiddenFolders : Route
+    data class HiddenFolderR(val path: String) : Route
 }
 
 /** Uygulama genelinde paylaşılan arayüz durumu. */
@@ -121,7 +122,7 @@ class LibVM(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             loading = true
             val oldV = videos.map { it.key }.toHashSet(); val oldS = songs.map { it.key }.toHashSet()
-            val (v, s) = withContext(Dispatchers.IO) { Library.load(getApplication()) to Music.load(getApplication()) }
+            val (v, s) = withContext(Dispatchers.IO) { Library.migrateHidden(getApplication()); Library.load(getApplication()) to Music.load(getApplication()) }
             if (announce && (oldV.isNotEmpty() || oldS.isNotEmpty())) {
                 val nv = v.count { it.key !in oldV }; val ns = s.count { it.key !in oldS }
                 if (nv + ns > 0) toast(getApplication(), listOfNotNull(if (nv > 0) "$nv yeni video" else null, if (ns > 0) "$ns yeni şarkı" else null).joinToString(", ") + " eklendi")
@@ -319,7 +320,8 @@ private fun Shell(vm: LibVM) {
                 Route.Private -> PrivateScreen(vm, back)
                 Route.TrashR -> TrashScreen(vm, back)
                 Route.StatsR -> StatsScreen(vm, back)
-                Route.HiddenFolders -> HiddenFoldersScreen(vm, back)
+                Route.HiddenFolders -> HiddenFoldersScreen(vm, go, back)
+                is Route.HiddenFolderR -> HiddenFolderScreen(vm, r.path, back)
             }
         }
     }

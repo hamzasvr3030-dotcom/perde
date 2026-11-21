@@ -379,7 +379,10 @@ private fun FolderActions(f: Folder, vm: LibVM, dismiss: () -> Unit, open: () ->
             ActionItem(Icons.Filled.Edit, "Klasörü yeniden adlandır") { dialog = 1 }
             ActionItem(Icons.Filled.PushPin, if (f.pinned) "Sabitlemeyi kaldır" else "En üste sabitle") { Prefs.toggleIn(Library.PINNED, f.path); vm.bump(); dismiss() }
             ActionItem(Icons.AutoMirrored.Filled.PlaylistAdd, "Tümünü listeye ekle") { dialog = 4 }
-            ActionItem(Icons.Filled.VisibilityOff, "Listeden gizle (silmez)") { Prefs.toggleIn(Library.HIDDEN, f.path); vm.bump(); toast(ctx, "Klasör gizlendi. Daha → Gizlenen klasörler'den geri açabilirsin."); dismiss() }
+            ActionItem(Icons.Filled.VisibilityOff, "Gizle (telefonda hiçbir yerde görünmez)") {
+                dismiss()
+                Thread { Library.hideFolder(ctx, f.path); android.os.Handler(android.os.Looper.getMainLooper()).post { vm.reload(); toast(ctx, "Klasör gizlendi. Yalnızca Daha fazla → Gizlenen klasörler'de görünür.") } }.start()
+            }
             ActionItem(Icons.Filled.Lock, "Tüm videoları gizli klasöre taşı") { dialog = 3 }
             ActionItem(Icons.Filled.Delete, "Klasördeki videoları sil", Color(0xFFFF6B6B)) { dialog = 2 }
         }

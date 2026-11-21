@@ -357,6 +357,9 @@ private fun FolderActions(f: Folder, vm: LibVM, dismiss: () -> Unit, open: () ->
             Text(f.name, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(horizontal = 20.dp))
             Text("${f.videos.size} video · ${fmtSize(f.size)}", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
             ActionItem(Icons.Filled.FolderOpen, "Aç") { dismiss(); open() }
+            nextInFolder(f.videos)?.takeIf { folderProgress(f.videos).first > 0 || Prefs.pos(it.key) > 0 }?.let { nx ->
+                ActionItem(Icons.Filled.PlayCircle, "Kaldığın yerden: ${nx.title}") { dismiss(); val l = Library.sort(f.videos); PlayerActivity.open(ctx, l, l.indexOf(nx).coerceAtLeast(0)) }
+            }
             ActionItem(Icons.Filled.PlayArrow, "Tümünü oynat") { dismiss(); PlayerActivity.open(ctx, Library.sort(f.videos), 0) }
             ActionItem(Icons.Filled.Edit, "Klasörü yeniden adlandır") { dialog = 1 }
             ActionItem(Icons.Filled.PushPin, if (f.pinned) "Sabitlemeyi kaldır" else "En üste sabitle") { Prefs.toggleIn(Library.PINNED, f.path); vm.bump(); dismiss() }
@@ -800,6 +803,7 @@ private fun ContinueCard(v: Video, onClick: () -> Unit) {
 @Composable
 private fun FolderTile(f: Folder, onClick: () -> Unit, onLong: () -> Unit) {
     val newCount = f.videos.count { it.isNew }
+    val (done, frac) = folderProgress(f.videos)
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Surf).combinedClickable(onClick = onClick, onLongClick = onLong).padding(10.dp)) {
         Box {
             Thumb(f.videos.maxBy { it.dateAdded }.copy(duration = 0), Modifier.fillMaxWidth().aspectRatio(16 / 10f), showNew = false)
@@ -808,6 +812,32 @@ private fun FolderTile(f: Folder, onClick: () -> Unit, onLong: () -> Unit) {
             if (f.pinned) Icon(Icons.Filled.PushPin, null, tint = Color.White, modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(16.dp))
         }
         Text(f.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
-        Text("${f.videos.size} video · ${fmtSize(f.size)}", maxLines = 1, color = Muted, fontSize = 12.sp)
+        Text(if (done > 0) "$done/${f.videos.size} izlendi · ${fmtSize(f.size)}" else "${f.videos.size} video · ${fmtSize(f.size)}", maxLines = 1, color = Muted, fontSize = 12.sp)
+        if (done > 0) Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f).height(4.dp).clip(CircleShape).background(Surf2)) {
+                Box(Modifier.fillMaxWidth(frac).fillMaxHeight().clip(CircleShape).background(if (frac >= 1f) Color(0xFF3DDC97) else Accent))
+            }
+            Text(if (frac >= 1f) "  bitti" else "  %${(frac * 100).toInt()}", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (frac >= 1f) Color(0xFF3DDC97) else Accent)
+        }
     }
+}
+
+/** Bir video izlendi sayılır: sonuna kadar (%90) gelinmişse. */
+fun isWatched(v: Video): Boolean { val d = Prefs.dur(v.key); return d > 0 && Prefs.pos(v.key) >= d * 0.9 }
+
+/** (izlenen sayısı, süreye göre ilerleme 0..1) */
+fun folderProgress(vs: List<Video>): Pair<Int, Float> {
+    var tot = 0L; var got = 0L; var n = 0
+    vs.forEach { v ->
+        val d = (Prefs.dur(v.key).takeIf { it > 0 } ?: v.duration).coerceAtLeast(1)
+        tot += d
+        if (isWatched(v)) { got += d; n++ } else got += Prefs.pos(v.key).coerceAtMost(d)
+    }
+    return n to if (tot > 0) (got.toFloat() / tot).coerceIn(0f, 1f) else 0f
+}
+
+/** Sırayla izlenen klasörde kaldığın video: yarım kalan en yenisi, yoksa ilk izlenmemiş. */
+fun nextInFolder(vs: List<Video>): Video? {
+    val l = Library.sort(vs)
+    return l.filter { !isWatched(it) && Prefs.pos(it.key) > 5000 }.maxByOrNull { Prefs.playedAt(it.key) } ?: l.firstOrNull { !isWatched(it) }
 }

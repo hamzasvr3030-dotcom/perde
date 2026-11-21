@@ -275,6 +275,7 @@ private fun scaled(b: Bitmap?, px: Int): Bitmap? = b?.let {
 class MusicWidget : AppWidgetProvider() {
     companion object {
         const val PREV = "com.perde.oynatici.MW_PREV"; const val TOGGLE = "com.perde.oynatici.MW_TOGGLE"; const val NEXT = "com.perde.oynatici.MW_NEXT"
+        const val SHUF = "com.perde.oynatici.MW_SHUF"; const val REP = "com.perde.oynatici.MW_REP"; const val FAV = "com.perde.oynatici.MW_FAV"
         @Volatile private var artKey = ""; @Volatile private var art: Bitmap? = null
 
         fun update(ctx: Context) {
@@ -308,14 +309,23 @@ class MusicWidget : AppWidgetProvider() {
             v.setTextViewText(R.id.mw_title, if (active) NowState.title.ifEmpty { "Kadraj" } else "Müzik çalmıyor")
             v.setTextViewText(R.id.mw_artist, if (active) NowState.artist.ifEmpty { if (NowState.isMusic) "" else "Video" } else "Dokun ve bir şarkı seç")
             val a = art
-            if (active && a != null && artKey == NowState.key) v.setImageViewBitmap(R.id.mw_art, a) else v.setImageViewResource(R.id.mw_art, R.drawable.ic_launcher_foreground)
-            v.setImageViewResource(R.id.mw_play, if (p?.isPlaying == true) R.drawable.ic_pause else R.drawable.ic_play)
+            if (active && a != null && artKey == NowState.key) { v.setImageViewBitmap(R.id.mw_art, a); v.setImageViewBitmap(R.id.mw_bg, a) }
+            else { v.setImageViewResource(R.id.mw_art, R.drawable.ic_launcher_foreground); v.setImageViewResource(R.id.mw_bg, android.R.color.transparent) }
+            v.setImageViewResource(R.id.mw_play, if (p?.isPlaying == true) R.drawable.ic_pause_dark else R.drawable.ic_play_dark)
+            v.setImageViewResource(R.id.mw_shuffle, if (p?.shuffleModeEnabled == true) R.drawable.ic_shuffle_on else R.drawable.ic_shuffle)
+            v.setImageViewResource(R.id.mw_repeat, when (p?.repeatMode) { androidx.media3.common.Player.REPEAT_MODE_ALL -> R.drawable.ic_repeat_on; androidx.media3.common.Player.REPEAT_MODE_ONE -> R.drawable.ic_repeat_one; else -> R.drawable.ic_repeat })
+            v.setImageViewResource(R.id.mw_fav, if (active && Favs.has(NowState.key)) R.drawable.ic_heart_on else R.drawable.ic_heart)
+            val ni = p?.nextMediaItemIndex ?: -1
+            v.setTextViewText(R.id.mw_next_t, if (active && p != null && ni >= 0 && ni < p.mediaItemCount) "Sıradaki: " + (p.getMediaItemAt(ni).mediaMetadata.title ?: "") else "")
             val open = PendingIntent.getActivity(ctx, 21, Intent(ctx, MainActivity::class.java).putExtra(if (active) "openNow" else "tab", if (active) true else 1)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
             v.setOnClickPendingIntent(R.id.mw_root, open)
             v.setOnClickPendingIntent(R.id.mw_prev, bc(ctx, PREV, 22))
             v.setOnClickPendingIntent(R.id.mw_play, if (active) bc(ctx, TOGGLE, 23) else open)
             v.setOnClickPendingIntent(R.id.mw_next, bc(ctx, NEXT, 24))
+            v.setOnClickPendingIntent(R.id.mw_shuffle, bc(ctx, SHUF, 25))
+            v.setOnClickPendingIntent(R.id.mw_repeat, bc(ctx, REP, 26))
+            v.setOnClickPendingIntent(R.id.mw_fav, bc(ctx, FAV, 27))
             return v
         }
     }
@@ -329,8 +339,11 @@ class MusicWidget : AppWidgetProvider() {
             TOGGLE -> p?.let { if (it.isPlaying) it.pause() else it.play() }
             PREV -> p?.let { if (it.currentPosition > 4000) it.seekTo(0) else it.seekToPreviousMediaItem() }
             NEXT -> p?.seekToNextMediaItem()
+            SHUF -> p?.let { Engine.setShuffle(!it.shuffleModeEnabled) }
+            REP -> p?.let { it.repeatMode = when (it.repeatMode) { androidx.media3.common.Player.REPEAT_MODE_OFF -> androidx.media3.common.Player.REPEAT_MODE_ALL; androidx.media3.common.Player.REPEAT_MODE_ALL -> androidx.media3.common.Player.REPEAT_MODE_ONE; else -> androidx.media3.common.Player.REPEAT_MODE_OFF } }
+            FAV -> NowState.key.takeIf { it.isNotEmpty() }?.let { Favs.toggle(it) }
         }
-        if (intent.action in setOf(TOGGLE, PREV, NEXT)) update(context)
+        if (intent.action in setOf(TOGGLE, PREV, NEXT, SHUF, REP, FAV)) update(context)
     }
 }
 

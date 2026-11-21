@@ -47,32 +47,39 @@ import kotlin.random.Random
 object SmartShuffle {
     fun <T> order(items: List<T>, artist: (T) -> String, recent: (T) -> Boolean, lastArtist: String? = null, rnd: Random = Random.Default): List<T> {
         val (old, fresh) = items.partition(recent)
-        val a = spread(fresh.shuffled(rnd), artist, lastArtist)
+        val a = spread(fresh.shuffled(rnd), artist, lastArtist).let { l ->
+            // az önce çalan sanatçıyla başlamasın (mümkünse)
+            val la = norm(lastArtist)
+            if (la != null && l.size > 1 && norm(artist(l[0])) == la) l.indexOfFirst { norm(artist(it)) != la }.takeIf { it > 0 }?.let { j -> l.toMutableList().apply { add(0, removeAt(j)) } } ?: l else l
+        }
         return a + spread(old.shuffled(rnd), artist, a.lastOrNull()?.let(artist) ?: lastArtist)
     }
 
     private fun norm(s: String?) = s?.trim()?.lowercase(Locale.ROOT)?.takeIf { it.isNotEmpty() && it != "<unknown>" && it != "bilinmeyen sanatçı" }
 
+    /** Liste zaten rastgele; sadece aynı sanatçı 3. kez üst üste gelecekse onu ileriden biriyle değiştirir.
+     *  Böylece aynı sanatçı arada bir art arda gelebilir ama "iki şarkıda bir" gibi bir düzen oluşmaz. */
     private fun <T> spread(list: List<T>, artist: (T) -> String, prev0: String?): List<T> {
-        val rest = list.toMutableList()
-        val left = HashMap<String, Int>()
-        rest.forEach { x -> norm(artist(x))?.let { left[it] = (left[it] ?: 0) + 1 } }
-        val out = ArrayList<T>(list.size)
-        var prev = norm(prev0)
-        while (rest.isNotEmpty()) {
-            var best = -1; var bestN = -1
-            for (i in rest.indices) {
-                val a = norm(artist(rest[i]))
-                if (a != null && a == prev) continue
-                val n = if (a == null) 0 else left[a] ?: 0
-                if (n > bestN) { best = i; bestN = n }
-            }
-            if (best < 0) best = 0
-            val x = rest.removeAt(best)
-            norm(artist(x))?.let { left[it] = (left[it] ?: 1) - 1 }
-            prev = norm(artist(x)); out += x
+        val a = list.toMutableList()
+        val n = a.map { norm(artist(it)) }.toMutableList()
+        fun runBefore(i: Int): Int {           // i'den önce kaç tane aynı sanatçı art arda
+            val x = n[i] ?: return 0
+            var c = 0; var j = i - 1
+            while (j >= 0 && n[j] == x) { c++; j-- }
+            if (j < 0 && norm(prev0) == x) c++
+            return c
         }
-        return out
+        var i = 0; var guard = 0
+        while (i < a.size && guard++ < a.size * 4) {
+            if (runBefore(i) < 2) { i++; continue }
+            val k = (i + 1 until a.size).firstOrNull { n[it] != n[i] }
+            if (k != null) { a[i] = a[k].also { a[k] = a[i] }; n[i] = n[k].also { n[k] = n[i] }; i++; continue }
+            // sonda kaldıysa: öne, aynı sanatçının yanına düşmeyecek bir yere yerleştir
+            val x = a.removeAt(i); val xn = n.removeAt(i)
+            val j = (0..i).firstOrNull { j -> (j == 0 || n[j - 1] != xn) && (j >= n.size || n[j] != xn) && !(j == 0 && norm(prev0) == xn && n.getOrNull(0) == xn) }
+            if (j == null) { a.add(i, x); n.add(i, xn); i++ } else { a.add(j, x); n.add(j, xn); i = maxOf(0, j - 2) }
+        }
+        return a
     }
 }
 

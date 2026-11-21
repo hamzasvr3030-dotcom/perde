@@ -10,14 +10,19 @@ class ShuffleTest {
 
     private fun adjacent(l: List<S>) = l.zipWithNext().count { (a, b) -> a.artist.isNotBlank() && a.artist == b.artist }
 
-    @Test fun noSameArtistBackToBack() {
-        // 10 Tarkan, 6 Sezen, 4 Sertab: kusursuz dağıtım mümkün
+    private fun maxRun(l: List<S>): Int { var m = 1; var c = 1; for (i in 1 until l.size) { c = if (l[i].artist == l[i - 1].artist) c + 1 else 1; m = maxOf(m, c) }; return m }
+
+    @Test fun neverThreeInARowButNotRigid() {
+        // 10 Tarkan, 6 Sezen, 4 Sertab
         val items = (0 until 10).map { S(it, "Tarkan") } + (10 until 16).map { S(it, "Sezen") } + (16 until 20).map { S(it, "Sertab") }
+        var pairs = 0
         repeat(50) { seed ->
             val o = SmartShuffle.order(items, { it.artist }, { it.recent }, null, Random(seed))
             assertEquals(items.toSet(), o.toSet())
-            assertEquals("seed $seed: ${o.map { it.artist }}", 0, adjacent(o))
+            assertTrue("seed $seed: ${o.map { it.artist }}", maxRun(o) <= 2)
+            pairs += adjacent(o)
         }
+        assertTrue("aynı sanatçı arada art arda gelebilmeli", pairs > 50)
     }
 
     @Test fun recentGoLast() {

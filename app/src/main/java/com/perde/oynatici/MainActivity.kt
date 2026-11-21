@@ -156,7 +156,9 @@ fun MainApp() {
     val ctx = LocalContext.current
     val vm: LibVM = viewModel()
     var granted by remember { mutableStateOf(hasStorage(ctx)) }
+    var resumeTick by remember { mutableIntStateOf(0) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        resumeTick++
         granted = hasStorage(ctx)
         if (granted) vm.reload()
         NowState.refresh()
@@ -166,9 +168,15 @@ fun MainApp() {
         if (Build.VERSION.SDK_INT >= 33 && ctx.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
             notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         launch(Dispatchers.IO) { try { Web.init(ctx); Web.maybeUpdate(ctx) } catch (_: Throwable) { } }
-        if (System.currentTimeMillis() - Prefs.lastUpdateCheck > 12 * 3600_000L) {
-            Prefs.lastUpdateCheck = System.currentTimeMillis()
-            Updater.check()?.let { r -> if (Updater.newer(r.version, Updater.current(ctx)) && r.version != Prefs.skipVersion) AppState.update = r }
+    }
+    // Güncelleme kontrolü: uygulama her öne geldiğinde, en fazla 15 dakikada bir.
+    // Sunucuya ulaşılamazsa zaman kaydedilmez, bir sonraki açılışta yeniden denenir.
+    LaunchedEffect(resumeTick) {
+        if (AppState.update == null && System.currentTimeMillis() - Prefs.lastUpdateCheck > 15 * 60_000L) {
+            Updater.check()?.let { r ->
+                Prefs.lastUpdateCheck = System.currentTimeMillis()
+                if (Updater.newer(r.version, Updater.current(ctx)) && r.version != Prefs.skipVersion) AppState.update = r
+            }
         }
     }
     Surface(color = Bg, modifier = Modifier.fillMaxSize()) {

@@ -607,10 +607,11 @@ private fun PlayerSheet(a: PlayerActivity, s: Sheet) {
                 Sheet.CHAPTERS -> ChaptersSheet(a)
                 Sheet.BOOKMARKS -> BookmarksSheet(a)
                 Sheet.ONLINE -> OnlineSubsSheet(a)
-                Sheet.DOWNLOAD -> DlOptionsContent(false, 1) { o ->
-                    a.curKey()?.let { k -> Dl.addSingles(a, listOf(Triple(k, ui.title, Web.cached(k)?.thumb)), o) }
+                Sheet.DOWNLOAD -> DlOptionsContent(false, 1) { o, at ->
+                    a.curKey()?.let { k -> Dl.addSingles(a, listOf(Triple(k, ui.title, Web.cached(k)?.thumb)), o, at) }
                     ui.sheet = null; a.toast("İndirme başladı — İndir sekmesinden takip edebilirsin")
                 }
+                Sheet.META -> a.curKey()?.let { k -> MetaContent(k, java.io.File(k).name) }
                 Sheet.PLAYLIST -> PlaylistPickerContent(listOfNotNull(a.curKey())) { msg -> ui.sheet = null; a.toast(msg) }
             }
         }
@@ -776,6 +777,7 @@ private fun MoreSheet(a: PlayerActivity) {
         Tile(Icons.Filled.Lock, "Ekran kilidi") { a.lock() }
         Tile(Icons.Filled.ChildCare, "Çocuk kilidi") { a.kidsLock() }
         Tile(Icons.Filled.Info, "Video bilgisi") { ui.sheet = Sheet.INFO }
+        if (a.isLocal) Tile(Icons.Filled.Theaters, "Film / dizi bilgisi") { ui.sheet = Sheet.META }
         Tile(Icons.Filled.Memory, if (decSw) "Çözücü: yazılım" else "Çözücü: donanım", decSw) {
             decSw = !decSw; Prefs.decoderSw = decSw; a.toast("Çözücü ayarı oynatıcı yeniden açılınca geçerli olur")
         }

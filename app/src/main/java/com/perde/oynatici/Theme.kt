@@ -35,8 +35,8 @@ import androidx.compose.ui.unit.dp
 /** Canlı değişebilen tema (vurgu rengi + OLED siyahı). */
 object ThemeState {
     val ACCENTS = listOf(
-        0xFFFF7A45 to "Turuncu", 0xFF9D7BFF to "Mor", 0xFF4DA3FF to "Mavi",
-        0xFF3DDC97 to "Yeşil", 0xFFFF5C9A to "Pembe", 0xFFFFC23D to "Altın"
+        0xFF3E8BFF to "Mavi", 0xFFFF7A45 to "Turuncu", 0xFF9D7BFF to "Mor",
+        0xFF2FD18B to "Yeşil", 0xFFFF5C9A to "Pembe", 0xFFFFB020 to "Altın"
     )
     var accentIdx by mutableIntStateOf(0)
     var amoled by mutableStateOf(false)
@@ -46,9 +46,9 @@ object ThemeState {
 val Accent: Color get() = Color(ThemeState.ACCENTS.getOrElse(ThemeState.accentIdx) { ThemeState.ACCENTS[0] }.first)
 val AccentSoft: Color get() = lerp(Accent, Color.White, 0.45f)
 val AccentDeep: Color get() = lerp(Accent, Color.Black, 0.78f)
-val Bg: Color get() = if (ThemeState.amoled) Color.Black else Color(0xFF0E0F13)
-val Surf: Color get() = if (ThemeState.amoled) Color(0xFF0C0C0E) else Color(0xFF17191F)
-val Surf2: Color get() = if (ThemeState.amoled) Color(0xFF17171A) else Color(0xFF22252D)
+val Bg: Color get() = if (ThemeState.amoled) Color.Black else Color(0xFF07080B)
+val Surf: Color get() = if (ThemeState.amoled) Color(0xFF111114) else Color(0xFF16181E)
+val Surf2: Color get() = if (ThemeState.amoled) Color(0xFF1C1C21) else Color(0xFF23262E)
 val Muted = Color(0xFFB4B7C0)
 
 @Composable

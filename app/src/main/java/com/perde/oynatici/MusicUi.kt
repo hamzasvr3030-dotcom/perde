@@ -101,25 +101,26 @@ fun SongRow(s: Song, onClick: () -> Unit, onMore: (() -> Unit)?) {
     val current = NowState.key == s.key && NowState.hasItem
     Row(Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = { onMore?.invoke() }).padding(horizontal = 16.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically) {
-        ArtImage(s.key, s.uri, s.path, Modifier.size(50.dp))
+        ArtImage(s.key, s.uri, s.path, Modifier.size(54.dp), RoundedCornerShape(12.dp))
         Column(Modifier.weight(1f).padding(start = 12.dp)) {
             Text(s.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium, color = if (current) Accent else Color.Unspecified)
             Text("${s.artist} · ${fmtTime(s.duration)}", maxLines = 1, overflow = TextOverflow.Ellipsis, color = Muted, fontSize = 13.sp)
         }
         if (current) AudioBars(NowState.playing, modifier = Modifier.padding(horizontal = 8.dp))
-        if (onMore != null) IconButton(onClick = onMore) { Icon(Icons.Filled.MoreVert, "Seçenekler", tint = Muted) }
+        if (onMore != null) IconButton(onClick = onMore) { Icon(Icons.Filled.MoreHoriz, "Seçenekler", tint = Muted) }
     }
 }
 
 @Composable
 private fun PlayButtons(songs: List<Song>) {
     val ctx = LocalContext.current
-    Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Button(onClick = { Engine.playSongs(ctx, songs, 0); AppState.showNow = true }, enabled = songs.isNotEmpty()) {
-            Icon(Icons.Filled.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Tümünü çal")
+    Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Button(onClick = { Engine.playSongs(ctx, songs, 0); AppState.showNow = true }, enabled = songs.isNotEmpty(), modifier = Modifier.weight(1f).height(52.dp), shape = CircleShape) {
+            Icon(Icons.Filled.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Tümünü çal", fontSize = 16.sp, fontWeight = FontWeight.Bold)
         }
-        FilledTonalButton(onClick = { Engine.playSongs(ctx, songs.shuffled(), 0, shuffle = false); AppState.showNow = true }, enabled = songs.isNotEmpty()) {
-            Icon(Icons.Filled.Shuffle, null); Spacer(Modifier.width(6.dp)); Text("Karışık")
+        Button(onClick = { Engine.playSongs(ctx, songs.shuffled(), 0, shuffle = false); AppState.showNow = true }, enabled = songs.isNotEmpty(),
+            modifier = Modifier.weight(1f).height(52.dp), shape = CircleShape, colors = ButtonDefaults.buttonColors(containerColor = Surf2, contentColor = Accent)) {
+            Icon(Icons.Filled.Shuffle, null); Spacer(Modifier.width(6.dp)); Text("Karışık", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
         }
     }
 }
@@ -133,6 +134,8 @@ fun MusicScreen(vm: LibVM, go: (Route) -> Unit) {
     val songs = vm.songs
     Page("Müzik", null, actions = {
         IconButton(onClick = { go(Route.MusicSearch) }) { Icon(Icons.Filled.Search, "Ara") }
+        IconButton(onClick = { AppState.eqSheet = true }) { Icon(Icons.Filled.Equalizer, "Ekolayzer") }
+        IconButton(onClick = { go(Route.SettingsPage(1)) }) { Icon(Icons.Filled.Settings, "Müzik ayarları") }
         IconButton(onClick = { if (songs.isNotEmpty()) { Engine.playSongs(ctx, songs.shuffled(), 0); AppState.showNow = true } }) { Icon(Icons.Filled.Shuffle, "Karışık çal") }
     }) {
         Column {
@@ -191,6 +194,13 @@ fun MusicScreen(vm: LibVM, go: (Route) -> Unit) {
                 else -> {
                     val lists = remember(vm.ver) { Playlists.all() }
                     LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+                        item { Text("Akıllı listeler", color = Accent, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp)) }
+                        items(SmartLists.NAMES.size) { t ->
+                            ListItem(headlineContent = { Text(SmartLists.NAMES[t]) }, supportingContent = { Text("Kendiliğinden güncellenir") },
+                                leadingContent = { Icon(listOf(Icons.Filled.Whatshot, Icons.Filled.NewReleases, Icons.Filled.History, Icons.Filled.HearingDisabled)[t], null, tint = Accent) },
+                                modifier = Modifier.clickable { go(Route.SmartList(t)) }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
+                        }
+                        item { Text("Listelerim", color = Accent, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp)) }
                         item {
                             ListItem(headlineContent = { Text("Favoriler") }, leadingContent = { Icon(Icons.Filled.Favorite, null, tint = Color(0xFFFF5C7A)) },
                                 modifier = Modifier.clickable { go(Route.Favorites) }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
@@ -297,12 +307,16 @@ private fun SongActions(s: Song, vm: LibVM, dismiss: () -> Unit) {
             ActionItem(Icons.Filled.Share, "Paylaş") {
                 dismiss(); ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("audio/*").putExtra(Intent.EXTRA_STREAM, s.uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Paylaş"))
             }
+            ActionItem(Icons.Filled.Edit, "Etiketleri düzenle") { dialog = 4 }
+            ActionItem(Icons.Filled.NotificationsActive, "Zil sesi yap") { dialog = 5 }
             ActionItem(Icons.Filled.Info, "Bilgi") { dialog = 3 }
             ActionItem(Icons.Filled.Delete, "Sil", Color(0xFFFF6B6B)) { dialog = 2 }
         }
     }
     when (dialog) {
         1 -> PlaylistPickerDialog(listOf(s.key), dismiss)
+        4 -> TagEditorDialog(s, vm, dismiss)
+        5 -> RingtoneSheet(s, dismiss)
         2 -> AlertDialog(onDismissRequest = dismiss, title = { Text("Şarkı silinsin mi?") }, text = { Text(s.title) },
             confirmButton = { TextButton(onClick = {
                 dismiss(); scope.launch { val ok = withContext(Dispatchers.IO) { Library.deletePath(ctx, s.path, s.uri) }; toast(ctx, if (ok) "Silindi" else "Silinemedi"); vm.reload() }
@@ -346,7 +360,7 @@ fun MiniPlayer(open: () -> Unit) {
 }
 
 // ---------------- şimdi çalıyor ----------------
-private enum class NpSheet { QUEUE, SLEEP, EQ, PLAYLIST }
+private enum class NpSheet { QUEUE, SLEEP, EQ, PLAYLIST, SETTINGS }
 
 @Composable
 fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
@@ -360,7 +374,8 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
     var pos by remember { mutableLongStateOf(0L) }
     var dur by remember { mutableLongStateOf(0L) }
     var drag by remember { mutableStateOf<Float?>(null) }
-    var showLyrics by remember { mutableStateOf(false) }
+    var npView by remember { mutableIntStateOf(0) }   // 0 kapak, 1 sözler, 2 ses dalgası
+    var lyricsSrc by remember { mutableStateOf("") }
     var sheet by remember { mutableStateOf<NpSheet?>(null) }
     var repeat by remember { mutableIntStateOf(p.repeatMode) }
     var shuffle by remember { mutableStateOf(p.shuffleModeEnabled) }
@@ -387,7 +402,15 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
     val bgTop by animateColorAsState(lerp(tint, Color.Black, 0.35f), tween(600), label = "bg")
     val artScale by animateFloatAsState(if (NowState.playing) 1f else 0.86f, tween(400), label = "art")
     val lyrics = remember(key) { mutableStateOf<List<Pair<Long, String>>>(emptyList()) }
-    LaunchedEffect(key) { lyrics.value = if (key.startsWith("/")) withContext(Dispatchers.IO) { Lrc.load(key) } else emptyList() }
+    LaunchedEffect(key) {
+        lyrics.value = emptyList(); lyricsSrc = ""
+        val local = if (key.startsWith("/")) withContext(Dispatchers.IO) { Lrc.load(key) } else emptyList()
+        if (local.isNotEmpty()) { lyrics.value = local; lyricsSrc = "Yerel .lrc dosyası"; return@LaunchedEffect }
+        if (Prefs.onlineLyrics) {
+            val net = LyricsNet.get(ctx, key, NowState.artist, NowState.title, (dur / 1000).toInt().takeIf { it > 0 } ?: ((song?.duration ?: 0) / 1000).toInt())
+            if (net.isNotEmpty()) { lyrics.value = net; lyricsSrc = "Sözler: LRCLIB" }
+        }
+    }
 
     Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(bgTop, Color(0xFF0B0B0E)))).systemBarsPadding().padding(horizontal = 22.dp)) {
         Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -408,6 +431,7 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
                     if (song != null) DropdownMenuItem({ Text("Paylaş") }, {
                         menu = false; ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("audio/*").putExtra(Intent.EXTRA_STREAM, song.uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Paylaş"))
                     }, leadingIcon = { Icon(Icons.Filled.Share, null) })
+                    DropdownMenuItem({ Text("Çalma ayarları") }, { menu = false; sheet = NpSheet.SETTINGS }, leadingIcon = { Icon(Icons.Filled.Tune, null) })
                     DropdownMenuItem({ Text("Çalmayı durdur") }, {
                         menu = false; ctx.stopService(Intent(ctx, PlaybackService::class.java)); Engine.release(); close()
                     }, leadingIcon = { Icon(Icons.Filled.Stop, null) })
@@ -416,7 +440,9 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
         }
 
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            if (showLyrics) LyricsView(lyrics.value, pos) { p.seekTo(it) }
+            if (npView == 1) Column { Box(Modifier.weight(1f)) { LyricsView(lyrics.value, pos) { p.seekTo(it) } }
+                if (lyricsSrc.isNotEmpty()) Text(lyricsSrc, fontSize = 10.sp, color = Color.White.copy(alpha = 0.45f)) }
+            else if (npView == 2) VizView(art, tint, NowState.playing)
             else Box(Modifier.fillMaxWidth().aspectRatio(1f).scale(artScale).shadow(30.dp, RoundedCornerShape(28.dp)).clip(RoundedCornerShape(28.dp))
                 .background(Brush.linearGradient(listOf(tint, AccentDeep))), contentAlignment = Alignment.Center) {
                 val b = art
@@ -468,7 +494,8 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
         }
 
         Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-            NpTool(Icons.Filled.Lyrics, "Sözler", showLyrics) { showLyrics = !showLyrics }
+            NpTool(Icons.Filled.Lyrics, "Sözler", npView == 1) { npView = if (npView == 1) 0 else 1 }
+            NpTool(Icons.Filled.GraphicEq, "Dalga", npView == 2) { npView = if (npView == 2) 0 else 2 }
             NpTool(Icons.AutoMirrored.Filled.QueueMusic, "Sıra", false) { sheet = NpSheet.QUEUE }
             NpTool(Icons.Filled.Bedtime, if (sleepLabel.isEmpty()) "Uyku" else sleepLabel, sleepLabel.isNotEmpty()) { sheet = NpSheet.SLEEP }
             NpTool(Icons.Filled.Equalizer, "Ekolayzer", Prefs.eqOn) { sheet = NpSheet.EQ }
@@ -492,6 +519,7 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
                             sheet = null
                         }
                         NpSheet.EQ -> EqContent()
+                        NpSheet.SETTINGS -> TransitionSettings()
                         NpSheet.PLAYLIST -> PlaylistPickerContent(listOf(key)) { msg -> toast(ctx, msg); sheet = null }
                         else -> {}
                     }
@@ -514,8 +542,14 @@ private fun LyricsView(lines: List<Pair<Long, String>>, pos: Long, seek: (Long) 
     if (lines.isEmpty()) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
             Icon(Icons.Filled.Lyrics, null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(48.dp))
-            Text("Bu şarkı için söz dosyası bulunamadı.\nŞarkıyla aynı adlı .lrc dosyasını aynı klasöre koyarsan sözler burada akar.",
+            Text("Bu şarkı için söz bulunamadı.\nİnternette bulunamadıysa şarkıyla aynı adlı .lrc dosyasını aynı klasöre koyabilirsin.",
                 textAlign = TextAlign.Center, color = Color.White.copy(alpha = 0.7f), modifier = Modifier.padding(top = 10.dp))
+        }
+        return
+    }
+    if (lines.first().first < 0) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 24.dp)) {
+            itemsIndexed(lines) { _, (_, s) -> Text(s.ifEmpty { " " }, fontSize = 18.sp, color = Color.White.copy(alpha = 0.85f), lineHeight = 28.sp) }
         }
         return
     }

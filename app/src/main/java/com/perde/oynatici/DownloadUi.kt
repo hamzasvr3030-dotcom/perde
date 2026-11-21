@@ -90,12 +90,17 @@ fun DownloadScreen(go: (Route) -> Unit) {
     fun analyze(u: String) {
         job?.cancel()
         analysis = null; preview = null; err = null; selected.clear(); wholeList = false
-        if (!Web.isPage(u)) { loading = false; return }
+        if (!Web.isPage(u) && !Spotify.isSpotify(u)) { loading = false; return }
         loading = true
         job = scope.launch {
-            launch { preview = Web.preview(u) }
+            if (!Spotify.isSpotify(u)) launch { preview = Web.preview(u) }
             try {
-                val a = Web.analyze(ctx, u)
+                val a = if (Spotify.isSpotify(u)) {
+                    val (name, tracks) = Spotify.read(u)
+                    Web.Analysis.Multi(u, name, "Spotify", tracks.size, tracks.mapIndexed { i, t ->
+                        Web.Entry("sp:$i:${t.artist}-${t.title}", Spotify.searchUrl(t), "${t.artist} - ${t.title}", (t.durationMs / 1000).toInt(), t.artist, null)
+                    }, false)
+                } else Web.analyze(ctx, u)
                 analysis = a
                 if (a is Web.Analysis.Multi) { selected.addAll(a.entries.take(if (a.isChannel) 25 else 500).map { it.id }) }
             } catch (e: Exception) { err = Web.explain(e) }
@@ -115,7 +120,7 @@ fun DownloadScreen(go: (Route) -> Unit) {
 
     fun ask(r: DlReq, audio: Boolean) {
         if ((audio && DlPrefs.askAudio) || (!audio && DlPrefs.askVideo)) request = r to audio
-        else start(ctx, r, DlOpts.defaults(audio))
+        else start(ctx, r, DlOpts.defaults(audio), 0L)
     }
 
     Page("İndir", null, actions = {
@@ -125,20 +130,17 @@ fun DownloadScreen(go: (Route) -> Unit) {
     }) {
         LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp)) {
             item {
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
-                    SegmentedButton(mode == 0, { mode = 0 }, SegmentedButtonDefaults.itemShape(0, 2), icon = { Icon(Icons.Filled.Link, null, Modifier.size(18.dp)) }) { Text("Bağlantı") }
-                    SegmentedButton(mode == 1, { mode = 1 }, SegmentedButtonDefaults.itemShape(1, 2), icon = { Icon(Icons.Filled.Search, null, Modifier.size(18.dp)) }) { Text("YouTube'da ara") }
-                }
+                Box(Modifier.padding(bottom = 14.dp)) { PillSwitch(listOf("Bağlantı", "YouTube'da ara"), mode) { mode = it } }
             }
             if (mode == 0) {
                 item {
-                    OutlinedTextField(text, { text = it }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), maxLines = 5,
-                        label = { Text("Bağlantı (birden fazla da yapıştırabilirsin)") },
+                    OutlinedTextField(text, { text = it }, modifier = Modifier.fillMaxWidth(), shape = CircleShape.takeIf { !text.contains('\n') } ?: RoundedCornerShape(24.dp), maxLines = 5,
+                        placeholder = { Text("Video veya ses bağlantısı yapıştırın") },
                         trailingIcon = {
                             if (text.isEmpty()) IconButton(onClick = { clip.getText()?.text?.let { text = it } }) { Icon(Icons.Filled.ContentPaste, "Yapıştır") }
                             else IconButton(onClick = { text = "" }) { Icon(Icons.Filled.Close, "Temizle") }
                         })
-                    Text("YouTube, Instagram, TikTok, X, Facebook, Vimeo, SoundCloud ve yüzlerce site · tek video, oynatma listesi veya kanal",
+                    Text("YouTube, Instagram, TikTok, X, Facebook, Vimeo, SoundCloud, Spotify listeleri ve yüzlerce site · tek video, liste veya kanal",
                         color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp, bottom = 10.dp))
                 }
                 if (urls.size > 1) item { BulkCard(urls) { audio -> ask(DlReq.Singles(urls.map { Triple(it, Web.site(it), null) }), audio) } }
@@ -213,7 +215,7 @@ fun DownloadScreen(go: (Route) -> Unit) {
     request?.let { (r, audio) ->
         ModalBottomSheet(onDismissRequest = { request = null }, containerColor = Surf, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
-                DlOptionsContent(audio, r.count) { o -> start(ctx, r, o); request = null }
+                DlOptionsContent(audio, r.count) { o, at -> start(ctx, r, o, at); request = null }
             }
         }
     }
@@ -228,12 +230,16 @@ fun DownloadScreen(go: (Route) -> Unit) {
 @Composable
 private fun rememberSaveableInt(v: Int) = androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(v) }
 
-private fun start(ctx: android.content.Context, r: DlReq, o: DlOpts) {
+private fun start(ctx: android.content.Context, r: DlReq, o: DlOpts, at: Long) {
     when (r) {
-        is DlReq.Singles -> Dl.addSingles(ctx, r.items, o)
-        is DlReq.ListReq -> Dl.addList(ctx, r.title, r.entries, o, r.follow, r.url, r.allIds)
+        is DlReq.Singles -> Dl.addSingles(ctx, r.items, o, at)
+        is DlReq.ListReq -> Dl.addList(ctx, r.title, r.entries, o, r.follow, r.url, r.allIds, at = at)
     }
-    toast(ctx, if (r.count > 1) "${r.count} öğe sıraya eklendi" else "İndirme başladı")
+    toast(ctx, when {
+        at > System.currentTimeMillis() + 60_000 -> "${r.count} öğe " + java.text.SimpleDateFormat("HH:mm", TR).format(at) + "'de indirilecek"
+        r.count > 1 -> "${r.count} öğe sıraya eklendi"
+        else -> "İndirme başladı"
+    })
 }
 
 @Composable
@@ -339,7 +345,9 @@ private fun MultiHeader(a: Web.Analysis.Multi, selected: List<String>, follow: B
             Column { Text("Listeyi takip et", fontWeight = FontWeight.Medium); Text("Yeni video eklenince haber ver", color = Muted, fontSize = 12.sp) }
         }
         Spacer(Modifier.height(6.dp))
-        Text("${selected.size} video seçili · İndirilince aynı adla ${"liste"} oluşturulur", color = Muted, fontSize = 12.sp)
+        val sp = a.entries.firstOrNull()?.url?.startsWith("ytsearch") == true
+        if (sp) Text("Spotify şarkıları YouTube'da bulunup indirilir; şarkı ve sanatçı adı Spotify'daki gibi yazılır.", color = AccentSoft, fontSize = 12.sp, modifier = Modifier.padding(bottom = 4.dp))
+        Text("${selected.size} ${if (sp) "şarkı" else "video"} seçili · İndirilince aynı adla liste oluşturulur", color = Muted, fontSize = 12.sp)
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             BigAction(Icons.Filled.Movie, "Video indir", true, Modifier.weight(1f)) { onDl(false) }
@@ -356,7 +364,7 @@ private fun EntryRow(n: Int, e: Web.Entry, on: Boolean, onToggle: () -> Unit, on
         Text("$n", color = Muted, fontSize = 12.sp, modifier = Modifier.width(26.dp))
         Thumb169(e.thumb, Modifier.width(96.dp), e.durationSec)
         Text(e.title, Modifier.weight(1f).padding(horizontal = 10.dp), maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
-        IconButton(onClick = onPlay) { Icon(Icons.Filled.PlayCircleOutline, "Oynat", tint = Muted) }
+        if (!e.url.startsWith("ytsearch")) IconButton(onClick = onPlay) { Icon(Icons.Filled.PlayCircleOutline, "Oynat", tint = Muted) }
     }
 }
 
@@ -386,18 +394,31 @@ private fun FollowRow(f: Follow, onDownload: () -> Unit, onRemove: () -> Unit) {
     }
 }
 
+private fun sourceOf(url: String, audio: Boolean, list: Boolean = false): Pair<ImageVector, Color> {
+    val site = Web.site(url)
+    return when {
+        list -> (if (audio) Icons.Filled.QueueMusic else Icons.Filled.VideoLibrary) to Accent
+        url.startsWith("ytsearch") -> Icons.Filled.MusicNote to Color(0xFF1DB954)
+        site == "YouTube" -> Icons.Filled.SmartDisplay to Color(0xFFFF3B30)
+        site == "Instagram" -> Icons.Filled.CameraAlt to Color(0xFFE1306C)
+        site == "TikTok" -> Icons.Filled.MusicVideo to Color(0xFF25F4EE)
+        site.startsWith("X") -> Icons.Filled.Tag to Color(0xFFDDDDDD)
+        site == "Facebook" -> Icons.Filled.Facebook to Color(0xFF1877F2)
+        site == "SoundCloud" -> Icons.Filled.Cloud to Color(0xFFFF7700)
+        audio -> Icons.Filled.MusicNote to Accent
+        else -> Icons.Filled.Videocam to Accent
+    }
+}
+
 @Composable
 private fun JobRow(j: Job, compact: Boolean = false) {
     val ctx = LocalContext.current
-    Row(Modifier.fillMaxWidth().padding(vertical = if (compact) 2.dp else 4.dp).clip(RoundedCornerShape(14.dp)).background(if (compact) Color.Transparent else Surf)
+    Row(Modifier.fillMaxWidth().padding(vertical = if (compact) 2.dp else 5.dp).clip(RoundedCornerShape(20.dp)).background(if (compact) Color.Transparent else Surf)
         .clickable(enabled = j.state == Job.DONE || (j.state == Job.SKIP && j.file != null)) { j.file?.let { playKeys(ctx, listOf(it)) } }
         .padding(if (compact) 6.dp else 10.dp), verticalAlignment = Alignment.CenterVertically) {
         if (!compact) {
-            Box(Modifier.width(84.dp)) {
-                Thumb169(j.thumb, Modifier.fillMaxWidth())
-                Icon(if (j.opts.audio) Icons.Filled.MusicNote else Icons.Filled.Movie, null, tint = Color.White,
-                    modifier = Modifier.align(Alignment.TopStart).padding(3.dp).size(18.dp).clip(CircleShape).background(Color(0x99000000)).padding(2.dp))
-            }
+            val (ic, col) = sourceOf(j.url, j.opts.audio)
+            SourceBadge(ic, col)
         } else Text("${j.index + 1}", color = Muted, fontSize = 12.sp, modifier = Modifier.width(26.dp))
         Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
             Text(j.title, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium, fontSize = 14.sp)
@@ -408,14 +429,35 @@ private fun JobRow(j: Job, compact: Boolean = false) {
                 else -> j.phase
             }
             Text(sub, color = when (j.state) { Job.ERR -> BAD; Job.DONE, Job.SKIP -> OK; else -> Muted }, fontSize = 12.sp, maxLines = 2)
-            if (j.state == Job.RUN || j.state == Job.PAUSED) LinearProgressIndicator(progress = { j.progress }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp).height(5.dp).clip(CircleShape), color = Accent, trackColor = Surf2)
+            if (j.state == Job.RUN || j.state == Job.PAUSED || j.state == Job.Q) LinearProgressIndicator(progress = { j.progress }, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).height(6.dp).clip(CircleShape), color = Accent, trackColor = Surf2, drawStopIndicator = {})
         }
         when (j.state) {
-            Job.RUN, Job.Q, Job.WAIT -> { IconButton(onClick = { Dl.pause(j) }) { Icon(Icons.Filled.Pause, "Duraklat") }; IconButton(onClick = { Dl.cancel(j) }) { Icon(Icons.Filled.Close, "İptal", tint = Muted) } }
-            Job.PAUSED -> { IconButton(onClick = { Dl.resume(j) }) { Icon(Icons.Filled.PlayArrow, "Devam", tint = Accent) }; IconButton(onClick = { Dl.cancel(j) }) { Icon(Icons.Filled.Close, "İptal", tint = Muted) } }
+            Job.SCHED -> { TextButton(onClick = { Dl.startNow(j) }) { Text("Şimdi") }; IconButton(onClick = { Dl.cancel(j) }) { Icon(Icons.Filled.Close, "İptal", tint = Muted) } }
+            Job.RUN, Job.Q, Job.WAIT -> { RoundBtn(Icons.Filled.Pause, "Duraklat") { Dl.pause(j) }; JobMenu(j) }
+            Job.PAUSED -> { RoundBtn(Icons.Filled.PlayArrow, "Devam") { Dl.resume(j) }; JobMenu(j) }
             Job.ERR, Job.CANCEL -> { IconButton(onClick = { Dl.resume(j) }) { Icon(Icons.Filled.Refresh, "Tekrar dene", tint = Accent) }; if (!compact) IconButton(onClick = { Dl.remove(j) }) { Icon(Icons.Filled.Delete, "Kaldır", tint = Muted) } }
             Job.DONE -> Icon(Icons.Filled.CheckCircle, null, tint = OK, modifier = Modifier.padding(8.dp))
             else -> Icon(Icons.Filled.Done, null, tint = Muted, modifier = Modifier.padding(8.dp))
+        }
+    }
+}
+
+@Composable
+private fun RoundBtn(icon: ImageVector, desc: String, onClick: () -> Unit) {
+    Box(Modifier.size(44.dp).clip(CircleShape).background(Surf2).pressable(onClick = onClick), contentAlignment = Alignment.Center) {
+        Icon(icon, desc, tint = Color.White)
+    }
+}
+
+@Composable
+private fun JobMenu(j: Job) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) { Icon(Icons.Filled.MoreHoriz, "Diğer", tint = Muted) }
+        DropdownMenu(open, { open = false }) {
+            if (j.state == Job.PAUSED || j.state == Job.ERR) DropdownMenuItem({ Text("Devam et") }, { open = false; Dl.resume(j) }, leadingIcon = { Icon(Icons.Filled.PlayArrow, null) })
+            if (j.active) DropdownMenuItem({ Text("İptal et") }, { open = false; Dl.cancel(j) }, leadingIcon = { Icon(Icons.Filled.Close, null) })
+            DropdownMenuItem({ Text("Listeden kaldır") }, { open = false; Dl.remove(j) }, leadingIcon = { Icon(Icons.Filled.Delete, null) })
         }
     }
 }
@@ -428,11 +470,9 @@ private fun GroupCard(g: DlGroup) {
     val failed = js.count { it.state == Job.ERR }
     val run = js.firstOrNull { it.state == Job.RUN }
     val prog = if (js.isEmpty()) 0f else (js.sumOf { (if (it.state == Job.DONE || it.state == Job.SKIP) 1f else it.progress).toDouble() } / js.size).toFloat()
-    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(16.dp)).background(Surf)) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 5.dp).clip(RoundedCornerShape(20.dp)).background(Surf)) {
         Row(Modifier.fillMaxWidth().clickable { open = !open }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(46.dp).clip(RoundedCornerShape(12.dp)).background(Brush.linearGradient(listOf(Accent, AccentDeep))), contentAlignment = Alignment.Center) {
-                Icon(if (g.audio) Icons.Filled.LibraryMusic else Icons.Filled.VideoLibrary, null, tint = Color.White)
-            }
+            SourceBadge(if (g.audio) Icons.Filled.QueueMusic else Icons.Filled.VideoLibrary, Accent)
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text(g.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("$done/${js.size} tamamlandı" + (if (failed > 0) " · $failed hata" else "") + (run?.let { " · ${it.title.take(24)}" } ?: ""),
@@ -450,7 +490,7 @@ private fun GroupCard(g: DlGroup) {
 
 // ---------------- seçenekler ----------------
 @Composable
-fun DlOptionsContent(audioInit: Boolean, count: Int, onStart: (DlOpts) -> Unit) {
+fun DlOptionsContent(audioInit: Boolean, count: Int, onStart: (DlOpts, Long) -> Unit) {
     var audio by remember { mutableStateOf(audioInit) }
     var h by remember { mutableIntStateOf(DlPrefs.height) }
     var fmt by remember { mutableStateOf(DlPrefs.audioFmt) }
@@ -461,6 +501,9 @@ fun DlOptionsContent(audioInit: Boolean, count: Int, onStart: (DlOpts) -> Unit) 
     var meta by remember { mutableStateOf(DlPrefs.meta) }
     var smart by remember { mutableStateOf(DlPrefs.smart) }
     var saveDefault by remember { mutableStateOf(false) }
+    var whenMode by remember { mutableIntStateOf(0) }      // 0 şimdi, 1 bu gece, 2 saat seç
+    var pickTime by remember { mutableStateOf(false) }
+    var custom by remember { mutableStateOf(DlAlarm.tonight(2, 0)) }
     Text(if (count > 1) "$count öğeyi indir" else "İndir", fontSize = 21.sp, fontWeight = FontWeight.Bold)
     Spacer(Modifier.height(10.dp))
     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
@@ -489,6 +532,20 @@ fun DlOptionsContent(audioInit: Boolean, count: Int, onStart: (DlOpts) -> Unit) 
         OptSwitch("Akıllı ad düzeltme", "\"Tarkan - Kuzu Kuzu (Official Video)\" → Tarkan / Kuzu Kuzu", smart) { smart = it }
         OptSwitch("SponsorBlock", "Sponsor reklamlarını ve müzik videolarındaki konuşma kısımlarını kes", sponsor) { sponsor = it }
     }
+    OptLabel("Ne zaman?")
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(whenMode == 0, { whenMode = 0 }, label = { Text("Şimdi") })
+        FilterChip(whenMode == 1, { whenMode = 1 }, label = { Text("Bu gece 02:00") }, leadingIcon = { Icon(Icons.Filled.Bedtime, null, Modifier.size(16.dp)) })
+        FilterChip(whenMode == 2, { whenMode = 2; pickTime = true }, label = { Text(if (whenMode == 2) java.text.SimpleDateFormat("d MMM HH:mm", TR).format(custom) else "Saat seç") },
+            leadingIcon = { Icon(Icons.Filled.Schedule, null, Modifier.size(16.dp)) })
+    }
+    if (whenMode > 0) Text("Telefon uykudayken de zamanı gelince başlar; Wi-Fi'nin boş olduğu saatler için idealdir.", color = Muted, fontSize = 12.sp)
+    if (pickTime) {
+        val st = rememberTimePickerState(2, 0, true)
+        AlertDialog(onDismissRequest = { pickTime = false }, title = { Text("Başlama saati") }, text = { TimePicker(st) },
+            confirmButton = { TextButton(onClick = { custom = DlAlarm.tonight(st.hour, st.minute); pickTime = false }) { Text("Tamam") } },
+            dismissButton = { TextButton(onClick = { pickTime = false; if (whenMode == 2) whenMode = 0 }) { Text("Vazgeç") } })
+    }
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { saveDefault = !saveDefault }.padding(top = 6.dp)) {
         Checkbox(saveDefault, { saveDefault = it })
         Text("Bu ayarları varsayılan yap ve bir daha sorma", fontSize = 14.sp)
@@ -501,9 +558,10 @@ fun DlOptionsContent(audioInit: Boolean, count: Int, onStart: (DlOpts) -> Unit) 
             DlPrefs.chapters = chapters; DlPrefs.meta = meta; DlPrefs.smart = smart
             if (audio) DlPrefs.askAudio = false else DlPrefs.askVideo = false
         }
-        onStart(o)
+        onStart(o, when (whenMode) { 1 -> DlAlarm.tonight(2, 0); 2 -> custom; else -> 0L })
     }, modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(16.dp)) {
-        Icon(Icons.Filled.Download, null); Spacer(Modifier.width(8.dp)); Text(if (count > 1) "$count öğeyi indir" else "İndirmeyi başlat", fontSize = 16.sp)
+        Icon(if (whenMode == 0) Icons.Filled.Download else Icons.Filled.Schedule, null); Spacer(Modifier.width(8.dp))
+        Text(if (whenMode > 0) "Zamanla" else if (count > 1) "$count öğeyi indir" else "İndirmeyi başlat", fontSize = 16.sp)
     }
 }
 
@@ -528,7 +586,7 @@ fun DlSettingsContent() {
     key(ver) {
         Text("İndirme ayarları", fontSize = 21.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp))
         SetSwitch("Sadece Wi-Fi'de indir", "Mobil veride indirmeler bekletilir", DlPrefs.wifiOnly) { DlPrefs.wifiOnly = it; Dl.pump() }
-        SetChoice("Aynı anda indirme", listOf("1", "2", "3"), DlPrefs.parallel - 1) { DlPrefs.parallel = it + 1; ver++; Dl.pump() }
+        SetChoice("Aynı anda indirme", listOf("1", "2", "3", "4", "5", "6"), (DlPrefs.parallel - 1).coerceIn(0, 5)) { DlPrefs.parallel = it + 1; ver++; Dl.pump() }
         SetSwitch("Hızlı indirme", "Dosyayı parçalara bölüp aynı anda indirir (2–4 kat hız)", DlPrefs.fast) { DlPrefs.fast = it }
         SetChoice("Hız sınırı", DlPrefs.RATES, DlPrefs.rate) { DlPrefs.rate = it; ver++ }
         SetSwitch("Tekrar indirmeyi önle", "Daha önce indirilen video atlanır", DlPrefs.archive) { DlPrefs.archive = it }

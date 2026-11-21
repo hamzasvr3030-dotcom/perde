@@ -34,6 +34,7 @@ object Engine {
     private var builtSw = false
     val delay = AudioDelayProcessor()
     val night = NightProcessor()
+    val viz = VizProcessor()
     var audioOnly = false
     var sleepEnd = false
     var sleptAt = 0L
@@ -52,16 +53,46 @@ object Engine {
 
     private val handler = Handler(Looper.getMainLooper())
     private var lastSave = 0L
+    private var tickN = 0
+    private var playKey: String? = null
+    private var playMs = 0L
+    private var counted = false
 
     private val ticker = object : Runnable {
         override fun run() {
             val p = player ?: return
             if (abA >= 0 && abB > abA && p.currentPosition >= abB) p.seekTo(abA)
             if (sleepAt > 0 && SystemClock.elapsedRealtime() >= sleepAt) { sleepAt = 0; p.pause() }
-            if (p.isPlaying) Stats.tick(p.currentMediaItem?.mediaId, 250)
-            if (p.isPlaying && SystemClock.elapsedRealtime() - lastSave > 5000) savePos()
-            handler.postDelayed(this, 250)
+            fade(p)
+            if (++tickN % 5 == 0) {
+                val k = p.currentMediaItem?.mediaId
+                if (k != playKey) { playKey = k; playMs = 0; counted = false }
+                if (p.isPlaying) {
+                    Stats.tick(k, 250)
+                    playMs += 250
+                    // 30 sn'den fazla dinlenen şarkı "çalındı" sayılır (akıllı listeler için)
+                    if (!counted && playMs >= 30_000 && k != null) { counted = true; Stats.countPlay(k) }
+                }
+                if (p.isPlaying && SystemClock.elapsedRealtime() - lastSave > 5000) savePos()
+            }
+            if (Viz.enabled && !p.isPlaying) Viz.decay()
+            handler.postDelayed(this, 50)
         }
+    }
+
+    /** Müzikte şarkı sonunda sesi yavaşça kıs, yeni şarkıda yavaşça aç. */
+    private fun fade(p: ExoPlayer) {
+        val cf = Prefs.crossfade * 1000L
+        val music = p.currentMediaItem?.mediaMetadata?.mediaType == androidx.media3.common.MediaMetadata.MEDIA_TYPE_MUSIC
+        if (cf <= 0 || !music) { if (p.volume != 1f) p.volume = 1f; return }
+        val d = p.duration; val pos = p.currentPosition
+        if (d <= 0 || d == C.TIME_UNSET || d < cf * 3) { if (p.volume != 1f) p.volume = 1f; return }
+        val v = when {
+            d - pos < cf && p.hasNextMediaItem() -> ((d - pos).toFloat() / cf).coerceIn(0.05f, 1f)
+            pos < cf -> (pos.toFloat() / cf).coerceIn(0.05f, 1f)
+            else -> 1f
+        }
+        if (kotlin.math.abs(p.volume - v) > 0.01f) p.volume = v
     }
 
     fun get(ctx: Context): ExoPlayer {
@@ -74,7 +105,7 @@ object Engine {
                 DefaultAudioSink.Builder(context)
                     .setEnableFloatOutput(false)
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                    .setAudioProcessorChain(DefaultAudioSink.DefaultAudioProcessorChain(delay, night))
+                    .setAudioProcessorChain(DefaultAudioSink.DefaultAudioProcessorChain(delay, night, viz))
                     .build()
         }
         rf.setExtensionRendererMode(
@@ -89,6 +120,7 @@ object Engine {
             .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true)
             .setHandleAudioBecomingNoisy(true)
             .build()
+        p.skipSilenceEnabled = false
         p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
             .setPreferredTextLanguage("tr").setPreferredAudioLanguage("tr")
             .setSelectUndeterminedTextLanguage(true).build()
@@ -188,6 +220,7 @@ object Engine {
         p.shuffleModeEnabled = shuffle
         p.repeatMode = when (Prefs.musicRepeat) { 1 -> Player.REPEAT_MODE_ONE; 2 -> Player.REPEAT_MODE_ALL; else -> Player.REPEAT_MODE_OFF }
         p.setPlaybackSpeed(1f)
+        p.skipSilenceEnabled = Prefs.skipSilence
         p.prepare(); p.play()
         NowState.refresh()
     }

@@ -114,6 +114,20 @@ object Stats {
             .sortedByDescending { it.second }.take(n)
 
     fun clear() { val e = Prefs.sp.edit(); Prefs.sp.all.keys.filter { it.startsWith("st:") || it.startsWith("sv:") }.forEach { e.remove(it) }; e.apply() }
+
+    fun countPlay(k: String) { Prefs.sp.edit().putInt("pc:$k", Prefs.sp.getInt("pc:$k", 0) + 1).apply() }
+    fun plays(k: String) = Prefs.sp.getInt("pc:$k", 0)
+}
+
+/** Kendiliğinden oluşan müzik listeleri. */
+object SmartLists {
+    val NAMES = listOf("En çok dinlenenler", "Son eklenenler", "Son dinlenenler", "Hiç dinlenmeyenler")
+    fun songs(type: Int, all: List<Song>): List<Song> = when (type) {
+        0 -> all.filter { Stats.plays(it.key) > 0 }.sortedByDescending { Stats.plays(it.key) }.take(100)
+        1 -> all.sortedByDescending { it.dateAdded }.take(100)
+        2 -> all.filter { Prefs.playedAt(it.key) > 0 }.sortedByDescending { Prefs.playedAt(it.key) }.take(100)
+        else -> all.filter { Stats.plays(it.key) == 0 && Prefs.playedAt(it.key) == 0L }
+    }
 }
 
 data class TrashItem(val file: File, val original: String, val deletedAt: Long) {

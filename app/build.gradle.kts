@@ -11,8 +11,8 @@ android {
         applicationId = "com.perde.oynatici"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "1.3.0"
+        versionCode = 7
+        versionName = "1.4.0"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
@@ -72,6 +72,7 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-video:3.2.0")
 
     implementation("org.nanohttpd:nanohttpd:2.3.1")
+    implementation("net.jthink:jaudiotagger:3.0.1")
     implementation("io.github.junkfood02.youtubedl-android:library:0.18.1")
     implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1")
     implementation("com.hierynomus:smbj:0.14.0")
@@ -80,4 +81,5 @@ dependencies {
     implementation("com.google.android.gms:play-services-cast-framework:22.1.0")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

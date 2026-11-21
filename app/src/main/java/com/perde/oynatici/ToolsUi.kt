@@ -49,40 +49,6 @@ import java.io.File
 import java.security.MessageDigest
 
 @Composable
-private fun HubCard(icon: ImageVector, title: String, sub: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Row(modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Surf)
-        .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(20.dp)).clickable(onClick = onClick).padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).background(Brush.linearGradient(listOf(Accent, AccentDeep))), contentAlignment = Alignment.Center) {
-            Icon(icon, null, tint = Color.White)
-        }
-        Column(Modifier.weight(1f).padding(start = 14.dp)) {
-            Text(title, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-            Text(sub, color = Muted, fontSize = 13.sp)
-        }
-        Icon(Icons.Filled.ChevronRight, null, tint = Muted)
-    }
-}
-
-// ---------------- Ağ sekmesi ----------------
-@Composable
-fun NetScreen(go: (Route) -> Unit) {
-    val servers = remember { Smb.servers() }
-    Page("Ağ", null) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            HubCard(Icons.Filled.Download, "Bağlantı aç ve indir", "YouTube, Instagram, TikTok… oynat veya indir; doğrudan video adresleri") { AppState.tab = 2 }
-            HubCard(Icons.Filled.Lan, "Ağ klasörleri (SMB)", if (servers.isEmpty()) "Bilgisayardaki paylaşılan klasörden indirmeden izle" else "${servers.size} kayıtlı sunucu") { go(Route.SmbList) }
-            HubCard(Icons.Filled.Wifi, "Wi-Fi aktarım", "Bilgisayardan telefona video gönder / telefondan indir") { go(Route.Transfer) }
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(AccentDeep.copy(alpha = 0.5f)).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.Cast, null, tint = Accent)
-                Text("Televizyona yansıtmak için videoyu açıp üst çubuktaki yayın simgesine dokun (Chromecast / Google TV).",
-                    fontSize = 13.sp, modifier = Modifier.padding(start = 12.dp))
-            }
-        }
-    }
-}
-
-@Composable
 fun SmbListScreen(go: (Route) -> Unit, back: () -> Unit) {
     var list by remember { mutableStateOf(Smb.servers()) }
     var edit by remember { mutableStateOf<SmbServer?>(null) }
@@ -215,114 +181,8 @@ fun TransferScreen(back: () -> Unit) {
     }
 }
 
-// ---------------- Daha sekmesi (araçlar + ayarlar) ----------------
 @Composable
-fun MoreScreen(vm: LibVM, go: (Route) -> Unit) {
-    val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var ver by remember { mutableIntStateOf(0) }
-    var checking by remember { mutableStateOf(false) }
-    Page("Daha fazla", null) {
-        key(ver) {
-            Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 32.dp)) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        QuickTile(Icons.Filled.Lock, "Gizli klasör", Modifier.weight(1f)) { go(Route.Private) }
-                        QuickTile(Icons.Filled.DeleteSweep, "Çöp kutusu", Modifier.weight(1f)) { go(Route.TrashR) }
-                        QuickTile(Icons.Filled.BarChart, "İstatistikler", Modifier.weight(1f)) { go(Route.StatsR) }
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        QuickTile(Icons.Filled.Favorite, "Favoriler", Modifier.weight(1f)) { go(Route.Favorites) }
-                        QuickTile(Icons.AutoMirrored.Filled.PlaylistPlay, "Listeler", Modifier.weight(1f)) { go(Route.Playlists) }
-                        QuickTile(Icons.Filled.VisibilityOff, "Gizlenen klasörler", Modifier.weight(1f)) { go(Route.HiddenFolders) }
-                    }
-                    HubCard(Icons.Filled.SystemUpdate, "Güncellemeleri denetle", if (checking) "Denetleniyor…" else "Sürüm ${Updater.current(ctx)}") {
-                        if (checking) return@HubCard
-                        checking = true
-                        scope.launch {
-                            val r = Updater.check(); checking = false
-                            when {
-                                r == null -> toast(ctx, "Sunucuya ulaşılamadı")
-                                Updater.newer(r.version, Updater.current(ctx)) -> AppState.update = r
-                                else -> toast(ctx, "En güncel sürümü kullanıyorsun")
-                            }
-                        }
-                    }
-                }
-
-                SetHeader("Görünüm")
-                Text("Vurgu rengi", modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
-                Row(Modifier.padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ThemeState.ACCENTS.forEachIndexed { i, (c, n) ->
-                        Box(Modifier.size(40.dp).clip(CircleShape).background(Color(c))
-                            .border(3.dp, if (ThemeState.accentIdx == i) Color.White else Color.Transparent, CircleShape)
-                            .clickable { ThemeState.accentIdx = i; Prefs.accent = i; PerdeWidget.update(ctx) }, contentAlignment = Alignment.Center) {
-                            if (ThemeState.accentIdx == i) Icon(Icons.Filled.Check, n, tint = Color(0xFF14100E))
-                        }
-                    }
-                }
-                SetSwitch("Tam siyah tema (OLED)", "OLED ekranlarda pil tasarrufu sağlar", Prefs.amoled) { Prefs.amoled = it; ThemeState.amoled = it }
-                SetSwitch("Dokunma titreşimi", "Butonlara basınca hafif titreşim", Prefs.haptics) { Prefs.haptics = it }
-
-                SetHeader("Oynatıcı")
-                SetChoice("Kaldığı yer", listOf("Otomatik devam et", "Her seferinde sor", "Her zaman baştan başla"), Prefs.resumeMode) { Prefs.resumeMode = it; ver++ }
-                SetChoice("Video bitince", listOf("5 sn geri sayımla sonrakine geç", "Hemen sonrakine geç", "Dur"), Prefs.autoNext) { Prefs.autoNext = it; ver++ }
-                SetSwitch("Arka planda oynat", "Ekran kapanınca veya başka uygulamaya geçince ses devam eder", Prefs.bgPlay) { Prefs.bgPlay = it }
-                SetSwitch("Otomatik küçük pencere", "Ana ekrana çıkınca video küçük pencerede sürer", Prefs.autoPip) { Prefs.autoPip = it }
-                SetSwitch("Gece modu", "Yüksek sesleri kısar, konuşmaları yükseltir", Prefs.night) { Engine.setNight(it) }
-                SetSwitch("Ses yükseltme (%200)", "Sağ tarafta yukarı kaydırınca ses %100'ün üstüne çıkabilir", Prefs.boost) { Prefs.boost = it }
-                SetSwitch("Sarma önizlemesi", "Sararken o anın küçük resmini göster", Prefs.seekThumbs) { Prefs.seekThumbs = it }
-                SetChoice("Varsayılan ekran yönü", PlayerActivity.ORIENTS, Prefs.orient) { Prefs.orient = it; ver++ }
-                SetChoice("Çözücü", listOf("Donanım (önerilen, pil dostu)", "Yazılım öncelikli (AC3/DTS ses sorunlarında)"), if (Prefs.decoderSw) 1 else 0) { Prefs.decoderSw = it == 1; ver++ }
-
-                SetHeader("Dokunma hareketleri")
-                SetSwitch("Sol tarafta kaydır: parlaklık", null, Prefs.gBright) { Prefs.gBright = it }
-                SetSwitch("Sağ tarafta kaydır: ses", null, Prefs.gVolume) { Prefs.gVolume = it }
-                SetSwitch("Yatay kaydır: ileri/geri sar", null, Prefs.gSeek) { Prefs.gSeek = it }
-                SetSwitch("Çift dokun: kenarlarda sar, ortada duraklat", null, Prefs.gDouble) { Prefs.gDouble = it }
-                SetSwitch("İki parmakla yakınlaştır", null, Prefs.gPinch) { Prefs.gPinch = it }
-                SetSwitch("Basılı tut: 2× hız", null, Prefs.gLong) { Prefs.gLong = it }
-                val steps = listOf(5, 10, 15, 30)
-                SetChoice("Sarma adımı", steps.map { "$it saniye" }, steps.indexOf(Prefs.seekStep).coerceAtLeast(0)) { Prefs.seekStep = steps[it]; ver++ }
-
-                SetHeader("Altyazı")
-                SetSwitch("Aynı adlı altyazıyı otomatik yükle", "film.mp4 yanında film.srt varsa açılır", Prefs.autoSub) { Prefs.autoSub = it }
-                SetChoice("Karakter kodlaması", listOf("Otomatik", "UTF-8", "Türkçe (Windows-1254)"), Prefs.subEnc) { Prefs.subEnc = it; ver++ }
-                val sizes = listOf(0.8f, 1f, 1.3f, 1.6f, 2f)
-                SetChoice("Yazı boyutu", listOf("Küçük", "Normal", "Büyük", "Çok büyük", "Dev"), sizes.indexOfFirst { kotlin.math.abs(it - Prefs.subScale) < 0.05f }.coerceAtLeast(1)) { Prefs.subScale = sizes[it]; ver++ }
-                OnlineSubSettings()
-
-                SetHeader("Kütüphane")
-                SetSwitch("Silinenleri çöp kutusuna taşı", "30 gün içinde geri alabilirsin", Prefs.useTrash) { Prefs.useTrash = it }
-                SetSwitch("Izgara görünümü", null, Prefs.grid) { Prefs.grid = it }
-
-                SetHeader("Hakkında")
-                ListItem(headlineContent = { Text("Kadraj ${Updater.current(ctx)}") }, supportingContent = { Text("Kişisel video ve müzik oynatıcı · Media3 (ExoPlayer) + FFmpeg") },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent))
-                ListItem(headlineContent = { Text("İzleme geçmişini temizle") }, supportingContent = { Text("Kaldığı yer bilgileri ve ilerleme çubukları sıfırlanır") },
-                    modifier = Modifier.clickable {
-                        val e = Prefs.sp.edit()
-                        Prefs.sp.all.keys.filter { it.startsWith("p:") || it.startsWith("d:") || it.startsWith("t:") }.forEach { e.remove(it) }
-                        e.remove("last").apply(); vm.bump()
-                        toast(ctx, "İzleme geçmişi temizlendi")
-                    }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
-            }
-        }
-    }
-}
-
-@Composable
-private fun QuickTile(icon: ImageVector, label: String, m: Modifier, onClick: () -> Unit) {
-    Column(m.clip(RoundedCornerShape(18.dp)).background(Surf).border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(18.dp))
-        .clickable(onClick = onClick).padding(vertical = 16.dp, horizontal = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(icon, null, tint = Accent, modifier = Modifier.size(28.dp))
-        Spacer(Modifier.height(6.dp))
-        Text(label, fontSize = 12.sp, textAlign = TextAlign.Center, maxLines = 2)
-    }
-}
-
-@Composable
-private fun OnlineSubSettings() {
+fun OnlineSubSettings() {
     var open by remember { mutableStateOf(false) }
     ListItem(headlineContent = { Text("Online altyazı (OpenSubtitles)") },
         supportingContent = { Text(if (Prefs.osKey.isBlank()) "Ayarlanmadı — API anahtarı gerekli" else "Ayarlı · diller: ${Prefs.osLangs}") },

@@ -113,6 +113,11 @@ object Art {
     }
 
     suspend fun song(ctx: Context, s: Song, px: Int = 512) = load(ctx, s.key, s.uri, s.path, px)
+
+    fun invalidate(key: String) {
+        cache.snapshot().keys.filter { it.startsWith("$key@") }.forEach { cache.remove(it) }
+        synchronized(miss) { miss.removeAll { it.startsWith("$key@") } }
+    }
 }
 
 /** .lrc şarkı sözü dosyaları: [mm:ss.xx] satır */

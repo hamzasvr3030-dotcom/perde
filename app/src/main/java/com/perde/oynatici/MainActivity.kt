@@ -25,11 +25,16 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.MoreHoriz
+import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.SmartDisplay
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Wifi
@@ -79,6 +84,10 @@ sealed interface Route {
     data object Net : Route
     data object DlTab : Route
     data object DlHistory : Route
+    data class SmartList(val type: Int) : Route
+    data object StorageR : Route
+    data object DupR : Route
+    data class SettingsPage(val section: Int) : Route
     data object SmbList : Route
     data class SmbBrowse(val server: SmbServer, val path: String) : Route
     data object Transfer : Route
@@ -97,6 +106,7 @@ object AppState {
     var sharedUrl by mutableStateOf<String?>(null)
     var openNet by mutableIntStateOf(0)
     var clipUrl by mutableStateOf<String?>(null)
+    var eqSheet by mutableStateOf(false)
 }
 
 class LibVM(app: Application) : AndroidViewModel(app) {
@@ -238,11 +248,11 @@ private fun Shell(vm: LibVM) {
                 MiniPlayer { AppState.showNow = true }
                 NavigationBar(containerColor = Surf, tonalElevation = 0.dp) {
                     listOf(
-                        Triple("Videolar", Icons.Filled.Home, Icons.Outlined.Home),
-                        Triple("Müzik", Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic),
+                        Triple("Videolar", Icons.Filled.SmartDisplay, Icons.Outlined.SmartDisplay),
+                        Triple("Müzik", Icons.Filled.MusicNote, Icons.Outlined.MusicNote),
                         Triple("İndir", Icons.Filled.Download, Icons.Outlined.Download),
-                        Triple("Ağ", Icons.Filled.Wifi, Icons.Outlined.Wifi),
-                        Triple("Daha", Icons.Filled.Settings, Icons.Outlined.Settings)
+                        Triple("Ağ", Icons.Filled.Language, Icons.Outlined.Language),
+                        Triple("Daha fazla", Icons.Filled.MoreHoriz, Icons.Outlined.MoreHoriz)
                     ).forEachIndexed { i, (label, on, off) ->
                         NavigationBarItem(
                             selected = tab == i,
@@ -251,8 +261,9 @@ private fun Shell(vm: LibVM) {
                                 if (i == 2 && Dl.activeCount > 0) BadgedBox(badge = { Badge(containerColor = Accent) { Text("${Dl.activeCount}", color = Color(0xFF14100E)) } }) { Icon(if (tab == i) on else off, label) }
                                 else Icon(if (tab == i) on else off, label)
                             },
-                            label = { Text(label) },
-                            colors = NavigationBarItemDefaults.colors(selectedIconColor = Color(0xFF14100E), indicatorColor = Accent, selectedTextColor = Accent)
+                            label = { Text(label, maxLines = 1, fontSize = 11.sp, fontWeight = if (tab == i) FontWeight.Bold else FontWeight.Medium) },
+                            colors = NavigationBarItemDefaults.colors(selectedIconColor = Color.White, indicatorColor = Accent, selectedTextColor = Color.White,
+                                unselectedIconColor = Muted, unselectedTextColor = Muted)
                         )
                     }
                 }
@@ -275,6 +286,10 @@ private fun Shell(vm: LibVM) {
                 Route.Net -> NetScreen(go)
                 Route.DlTab -> DownloadScreen(go)
                 Route.DlHistory -> DlHistoryScreen(back)
+                is Route.SmartList -> SmartListScreen(vm, r.type, back)
+                Route.StorageR -> StorageScreen(vm, back)
+                Route.DupR -> DupesScreen(vm, back)
+                is Route.SettingsPage -> SettingsPage(vm, r.section, back)
                 Route.SmbList -> SmbListScreen(go, back)
                 is Route.SmbBrowse -> SmbBrowseScreen(r.server, r.path, go, back)
                 Route.Transfer -> TransferScreen(back)
@@ -287,6 +302,9 @@ private fun Shell(vm: LibVM) {
         }
     }
     if (AppState.showNow) NowPlayingScreen(vm) { AppState.showNow = false }
+    if (AppState.eqSheet) ModalBottomSheet(onDismissRequest = { AppState.eqSheet = false }, containerColor = Surf) {
+        Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 28.dp)) { EqContent() }
+    }
 }
 
 @Composable
@@ -317,6 +335,26 @@ fun UpdateDialog(r: Updater.Rel, dismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
     var progress by remember { mutableStateOf<Float?>(null) }
     var err by remember { mutableStateOf<String?>(null) }
+    var waitingPermission by remember { mutableStateOf(false) }
+    var installing by remember { mutableStateOf(false) }
+    fun go() {
+        progress = 0f; err = null
+        scope.launch {
+            val f = Updater.download(ctx, r) { progress = it }
+            progress = null
+            when {
+                f == null -> err = Updater.lastError ?: "İndirilemedi, internet bağlantını kontrol et."
+                !Updater.canInstall(ctx) -> { waitingPermission = true; Updater.openInstallPermission(ctx)
+                    err = "Açılan ekranda \"Bu kaynaktan izin ver\"i aç ve geri dön; kurulum kendiliğinden başlayacak." }
+                else -> { installing = true; Updater.install(ctx, f); err = null }
+            }
+        }
+    }
+    // İzin ekranından dönünce kendiliğinden devam et
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+        if (waitingPermission && Updater.canInstall(ctx)) { waitingPermission = false; go() }
+        if (installing) Updater.lastError?.let { err = it; installing = false }
+    }
     AlertDialog(onDismissRequest = { if (progress == null) dismiss() },
         icon = { Icon(Icons.Filled.SystemUpdate, null, tint = Accent) },
         title = { Text("Yeni sürüm: ${r.version}") },
@@ -329,19 +367,12 @@ fun UpdateDialog(r: Updater.Rel, dismiss: () -> Unit) {
                     LinearProgressIndicator(progress = { it }, modifier = Modifier.fillMaxWidth(), color = Accent)
                     Text("İndiriliyor %${(it * 100).toInt()}", fontSize = 12.sp, color = Muted)
                 }
+                if (installing && err == null) Text("Kurulum ekranı açılıyor… Açılan pencerede \"Güncelle\"ye dokun.", color = Accent, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
                 err?.let { Text(it, color = Color(0xFFFF6B6B), modifier = Modifier.padding(top = 8.dp)) }
             }
         },
         confirmButton = {
-            TextButton(enabled = progress == null, onClick = {
-                progress = 0f; err = null
-                scope.launch {
-                    val f = Updater.download(ctx, r) { progress = it }
-                    progress = null
-                    if (f == null) err = "İndirilemedi, internet bağlantını kontrol et."
-                    else if (!Updater.install(ctx, f)) err = "Açılan ekranda \"Bu kaynaktan izin ver\"i aç, sonra tekrar Güncelle'ye bas."
-                }
-            }) { Text("Güncelle") }
+            TextButton(enabled = progress == null, onClick = { go() }) { Text(if (err != null || installing) "Tekrar dene" else "Güncelle") }
         },
         dismissButton = {
             Row {

@@ -45,7 +45,7 @@ object DlPrefs {
     var askVideo by BoolP("dlAskV", true)
     var askAudio by BoolP("dlAskA", true)
     var wifiOnly by BoolP("dlWifi", false)
-    var parallel by IntP("dlPar", 2)
+    var parallel by IntP("dlPar3", 3)
     var fast by BoolP("dlFast", true)
     var rate by IntP("dlRate", 0)          // 0 sınırsız, 1: 1 MB/sn, 2: 2 MB/sn, 3: 5 MB/sn
     var archive by BoolP("dlArch", true)
@@ -73,9 +73,10 @@ data class DlOpts(
 
 class Job(
     val id: String, val url: String, title: String, val thumb: String?, val opts: DlOpts,
-    val group: String? = null, val index: Int = 0, val dir: String
+    val group: String? = null, val index: Int = 0, val dir: String,
+    var at: Long = 0L, val forceArtist: String? = null, val forceTitle: String? = null
 ) {
-    companion object { const val Q = 0; const val RUN = 1; const val DONE = 2; const val ERR = 3; const val CANCEL = 4; const val PAUSED = 5; const val WAIT = 6; const val SKIP = 7 }
+    companion object { const val Q = 0; const val RUN = 1; const val DONE = 2; const val ERR = 3; const val CANCEL = 4; const val PAUSED = 5; const val WAIT = 6; const val SKIP = 7; const val SCHED = 8 }
     var title by mutableStateOf(title)
     var state by mutableIntStateOf(Q)
     var progress by mutableFloatStateOf(0f)
@@ -89,10 +90,11 @@ class Job(
     // ilerleme hesabı
     var fileIdx = 0
     var lastRaw = 0f
-    val active get() = state == Q || state == RUN || state == WAIT
+    val active get() = state == Q || state == RUN || state == WAIT || state == SCHED
 
     fun json(): JSONObject = JSONObject().put("id", id).put("u", url).put("t", title).put("th", thumb ?: "").put("o", opts.json())
         .put("g", group ?: "").put("i", index).put("d", dir).put("st", state).put("p", progress.toDouble()).put("f", file ?: "").put("e", error ?: "")
+        .put("at", at).put("fa", forceArtist ?: "").put("ft", forceTitle ?: "")
 }
 
 class DlGroup(val id: String, val title: String, val audio: Boolean, val playlistId: Long?, val total: Int) {
@@ -133,7 +135,7 @@ object Dl {
             })
             cm.getNetworkCapabilities(cm.activeNetwork)?.let { unmetered = it.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) }
         } catch (_: Exception) { }
-        main.post { pump() }
+        main.post { pump(); jobs.filter { it.state == Job.SCHED }.minOfOrNull { it.at }?.let { DlAlarm.schedule(ctx, it) } }
     }
 
     private fun qFile() = File(app!!.filesDir, "dl_queue.json")
@@ -150,7 +152,8 @@ object Dl {
             val ja = o.optJSONArray("j") ?: JSONArray()
             for (i in 0 until ja.length()) ja.getJSONObject(i).let { j ->
                 val job = Job(j.getString("id"), j.getString("u"), j.optString("t"), j.optString("th").ifEmpty { null }, DlOpts.from(j.getJSONObject("o")),
-                    j.optString("g").ifEmpty { null }, j.optInt("i"), j.getString("d"))
+                    j.optString("g").ifEmpty { null }, j.optInt("i"), j.getString("d"), j.optLong("at"),
+                    j.optString("fa").ifEmpty { null }, j.optString("ft").ifEmpty { null })
                 job.state = j.optInt("st").let { if (it == Job.RUN || it == Job.WAIT) Job.Q else it }
                 job.progress = j.optDouble("p").toFloat(); job.file = j.optString("f").ifEmpty { null }; job.error = j.optString("e").ifEmpty { null }
                 job.phase = phaseText(job)
@@ -193,8 +196,21 @@ object Dl {
 
     private fun phaseText(j: Job) = when (j.state) {
         Job.Q -> "Sırada"; Job.DONE -> "İndirildi"; Job.ERR -> j.error ?: "Hata"; Job.CANCEL -> "İptal edildi"
-        Job.PAUSED -> "Duraklatıldı"; Job.WAIT -> "Wi-Fi bekleniyor"; Job.SKIP -> "Zaten indirilmiş"; else -> "İndiriliyor"
+        Job.PAUSED -> "Duraklatıldı"; Job.WAIT -> "Wi-Fi bekleniyor"; Job.SKIP -> "Zaten indirilmiş"
+        Job.SCHED -> "⏰ " + java.text.SimpleDateFormat("d MMM HH:mm", java.util.Locale.forLanguageTag("tr")).format(j.at) + " başlayacak"
+        else -> "İndiriliyor"
     }
+
+    /** Zamanı gelen zamanlanmış indirmeleri başlatır, kalanlar için alarmı yeniden kurar. */
+    fun releaseScheduled(ctx: Context) {
+        main.post {
+            val now = System.currentTimeMillis()
+            jobs.filter { it.state == Job.SCHED && it.at <= now + 60_000 }.forEach { it.state = Job.Q; it.phase = "Sırada" }
+            jobs.filter { it.state == Job.SCHED }.minOfOrNull { it.at }?.let { DlAlarm.schedule(ctx, it) }
+            save(); pump()
+        }
+    }
+    fun startNow(j: Job) { if (j.state == Job.SCHED) { j.state = Job.Q; j.phase = "Sırada"; save(); pump() } }
 
     // ---------------- kuyruğa ekleme ----------------
     fun outDir(audio: Boolean, sub: String? = null): File {
@@ -205,21 +221,29 @@ object Dl {
     fun safeName(s: String) = s.replace(Regex("[\\\\/:*?\"<>|]"), " ").replace(Regex("\\s+"), " ").trim().take(80).ifEmpty { "Liste" }
 
     /** Tek tek bağlantılar (tek video veya toplu yapıştırma). */
-    fun addSingles(ctx: Context, items: List<Triple<String, String, String?>>, opts: DlOpts) {
+    fun addSingles(ctx: Context, items: List<Triple<String, String, String?>>, opts: DlOpts, at: Long = 0L) {
         init(ctx)
         val dir = outDir(opts.audio).absolutePath
-        items.forEach { (url, title, thumb) -> jobs.add(0, Job("j${System.nanoTime()}", url, title, thumb, opts, dir = dir)) }
+        items.forEach { (url, title, thumb) -> jobs.add(0, Job("j${System.nanoTime()}", url, title, thumb, opts, dir = dir, at = at).also { schedule(ctx, it) }) }
         save(); pump()
     }
 
+    private fun schedule(ctx: Context, j: Job) {
+        if (j.at > System.currentTimeMillis() + 60_000) { j.state = Job.SCHED; j.phase = phaseText(j); DlAlarm.schedule(ctx, jobs.filter { it.state == Job.SCHED }.minOfOrNull { it.at } ?: j.at) }
+    }
+
     /** Liste/kanal: aynı adla çalma/izleme listesi oluşturur, kendi klasörüne indirir. */
-    fun addList(ctx: Context, title: String, entries: List<Web.Entry>, opts: DlOpts, follow: Boolean, sourceUrl: String, allIds: List<String>, existingPlaylist: Long? = null, startIndex: Int = 0): DlGroup {
+    fun addList(ctx: Context, title: String, entries: List<Web.Entry>, opts: DlOpts, follow: Boolean, sourceUrl: String, allIds: List<String>, existingPlaylist: Long? = null, startIndex: Int = 0, at: Long = 0L): DlGroup {
         init(ctx)
         val pid = existingPlaylist ?: Playlists.create(title).id
         val g = DlGroup("g${System.nanoTime()}", title, opts.audio, pid, entries.size)
         groups.add(0, g)
         val dir = outDir(opts.audio, title).absolutePath
-        entries.forEachIndexed { i, e -> jobs += Job("j${System.nanoTime()}_$i", e.url, e.title, e.thumb, opts, g.id, startIndex + i, dir) }
+        entries.forEachIndexed { i, e ->
+            val sp = e.url.startsWith("ytsearch")
+            jobs += Job("j${System.nanoTime()}_$i", e.url, e.title, e.thumb, opts, g.id, startIndex + i, dir, at,
+                if (sp) e.uploader else null, if (sp) e.title.substringAfter(" - ") else null).also { schedule(ctx, it) }
+        }
         if (follow) {
             follows.removeAll { it.url == sourceUrl }
             follows += Follow(sourceUrl, title, opts, pid, allIds.toSet(), emptyList(), dir)
@@ -267,7 +291,7 @@ object Dl {
         if (!waitWifi) {
             var running = jobs.count { it.state == Job.RUN }
             for (j in jobs.reversed()) {
-                if (running >= DlPrefs.parallel.coerceIn(1, 3)) break
+                if (running >= DlPrefs.parallel.coerceIn(1, 6)) break
                 if (j.state != Job.Q) continue
                 j.state = Job.RUN; j.phase = "Bağlanıyor…"; j.progress = 0f; j.fileIdx = 0; j.lastRaw = 0f; j.pauseReq = false
                 running++
@@ -352,14 +376,19 @@ object Dl {
         if (o.audio) {
             r.addOption("-f", "ba[ext=m4a]/ba/b")
             r.addOption("-x"); r.addOption("--audio-format", o.fmt); r.addOption("--audio-quality", "${o.kbps}K")
-            if (o.smart) {
+            // Sabit değer: "%(yok|Değer)s" şablonu (tek kelimelik değerler alan adı sanılmasın diye); ( ) | : % temizlenir
+            fun lit(s: String) = "%(kadraj_x|" + s.replace('(', '[').replace(')', ']').replace(Regex("[|:%]"), " ").replace(Regex("\\s+"), " ").trim() + ")s"
+            if (j.forceArtist != null && j.forceTitle != null) {
+                r.addOption("--parse-metadata", "${lit(j.forceArtist)}:%(artist)s")
+                r.addOption("--parse-metadata", "${lit(j.forceTitle)}:%(title)s")
+            } else if (o.smart) {
                 r.addOption("--parse-metadata", "title:(?P<artist>.+?)\\s+[-–—]\\s+(?P<title>.+)")
                 r.addCommands(listOf("--replace-in-metadata", "title",
                     "\\s*[\\(\\[][^\\)\\]]*(?i:official|video|audio|lyric|klip|clip|visualizer|hd|4k|remaster)[^\\)\\]]*[\\)\\]]", ""))
             }
             if (o.meta) { r.addOption("--embed-metadata"); r.addOption("--embed-thumbnail"); r.addOption("--convert-thumbnails", "jpg") }
             if (o.sponsor) r.addOption("--sponsorblock-remove", "sponsor,selfpromo,interaction,music_offtopic")
-            r.addOption("-o", j.dir + "/" + (if (o.smart) "%(artist,uploader)s - %(title).80B.%(ext)s" else "%(title).90B.%(ext)s"))
+            r.addOption("-o", j.dir + "/" + (if (o.smart || j.forceArtist != null) "%(artist,uploader)s - %(title).80B.%(ext)s" else "%(title).90B.%(ext)s"))
         } else {
             val h = o.height
             val av1 = if (h > 1080) "" else "[vcodec!^=av01]"

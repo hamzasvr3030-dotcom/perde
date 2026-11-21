@@ -55,46 +55,88 @@ object Updater {
         return false
     }
 
+    /** Son işlemin hata açıklaması (arayüzde gösterilir). */
+    @Volatile var lastError: String? = null
+
     suspend fun check(): Rel? = withContext(Dispatchers.IO) {
+        lastError = null
         try {
             val c = URL("https://api.github.com/repos/$REPO/releases/latest").openConnection() as HttpURLConnection
-            c.setRequestProperty("Accept", "application/vnd.github+json"); c.setRequestProperty("User-Agent", "Kadraj")
-            c.connectTimeout = 8000; c.readTimeout = 8000
-            if (c.responseCode != 200) return@withContext null
+            c.setRequestProperty("Accept", "application/vnd.github+json"); c.setRequestProperty("User-Agent", "Kadraj-Android")
+            c.connectTimeout = 10000; c.readTimeout = 10000
+            val code = c.responseCode
+            if (code != 200) { lastError = if (code == 403 || code == 429) "GitHub geçici olarak sınırladı, birkaç dakika sonra dene" else "Sunucu yanıtı: HTTP $code"; return@withContext null }
             val o = JSONObject(c.inputStream.bufferedReader().readText())
             val assets = o.getJSONArray("assets")
             var url = ""; var size = 0L
             for (i in 0 until assets.length()) { val a = assets.getJSONObject(i); if (a.getString("name").endsWith(".apk")) { url = a.getString("browser_download_url"); size = a.optLong("size") } }
-            if (url.isEmpty()) null else Rel(o.getString("tag_name").removePrefix("v"), o.optString("body"), url, size)
-        } catch (_: Exception) { null }
+            if (url.isEmpty()) { lastError = "Sürümde APK dosyası yok"; null } else Rel(o.getString("tag_name").removePrefix("v"), o.optString("body"), url, size)
+        } catch (e: Exception) { lastError = "İnternete bağlanılamadı (${e.javaClass.simpleName})"; null }
     }
 
+    fun apkFile(ctx: Context, r: Rel) = File(ctx.cacheDir, "update/Kadraj-${r.version}.apk")
+
     suspend fun download(ctx: Context, r: Rel, progress: (Float) -> Unit): File? = withContext(Dispatchers.IO) {
+        lastError = null
+        val f = apkFile(ctx, r); f.parentFile?.mkdirs()
+        if (f.exists() && r.size > 0 && f.length() == r.size) { progress(1f); return@withContext f }   // zaten indirilmiş
+        val part = File(f.path + ".part")
         try {
-            val f = File(ctx.cacheDir, "update/Kadraj-${r.version}.apk"); f.parentFile?.mkdirs()
-            var c = URL(r.apkUrl).openConnection() as HttpURLConnection
-            c.instanceFollowRedirects = true; c.setRequestProperty("User-Agent", "Kadraj")
+            var url = r.apkUrl; var c: HttpURLConnection
             var hops = 0
-            while (c.responseCode in 300..399 && hops++ < 5) { val loc = c.getHeaderField("Location"); c.disconnect(); c = URL(loc).openConnection() as HttpURLConnection }
+            while (true) {
+                c = URL(url).openConnection() as HttpURLConnection
+                c.instanceFollowRedirects = false; c.setRequestProperty("User-Agent", "Kadraj-Android")
+                c.connectTimeout = 15000; c.readTimeout = 30000
+                val code = c.responseCode
+                if (code in 300..399 && hops++ < 6) { url = c.getHeaderField("Location") ?: break; c.disconnect(); continue }
+                if (code != 200) { lastError = "İndirme hatası: HTTP $code"; return@withContext null }
+                break
+            }
             val total = c.contentLengthLong.takeIf { it > 0 } ?: r.size
-            c.inputStream.use { i -> FileOutputStream(f).use { o ->
+            c.inputStream.use { i -> FileOutputStream(part).use { o ->
                 val buf = ByteArray(64 * 1024); var done = 0L
                 while (true) { val n = i.read(buf); if (n < 0) break; o.write(buf, 0, n); done += n; if (total > 0) progress(done.toFloat() / total) }
             } }
+            if (r.size > 0 && part.length() != r.size) { lastError = "İndirme yarım kaldı, tekrar dene"; part.delete(); return@withContext null }
+            f.delete(); part.renameTo(f)
+            ctx.cacheDir.resolve("update").listFiles()?.filter { it.name != f.name }?.forEach { it.delete() }
             f
-        } catch (_: Exception) { null }
+        } catch (e: Exception) { lastError = "İndirme kesildi (${e.javaClass.simpleName}). İnternetini kontrol edip tekrar dene."; part.delete(); null }
     }
 
-    /** false: önce "bilinmeyen kaynaklar" izni gerekiyor (ayar ekranı açıldı). */
+    fun canInstall(ctx: Context) = Build.VERSION.SDK_INT < 26 || ctx.packageManager.canRequestPackageInstalls()
+
+    fun openInstallPermission(ctx: Context) {
+        ctx.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${ctx.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    /**
+     * Android'in paket kurucu oturumu ile kurar (bazı üreticilerde ACTION_VIEW yöntemi sessizce başarısız oluyor).
+     * Olmazsa klasik yönteme düşer. false: önce "bilinmeyen kaynaklar" izni gerekiyor.
+     */
     fun install(ctx: Context, f: File): Boolean {
-        if (Build.VERSION.SDK_INT >= 26 && !ctx.packageManager.canRequestPackageInstalls()) {
-            ctx.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${ctx.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            return false
+        if (!canInstall(ctx)) { openInstallPermission(ctx); return false }
+        lastError = null
+        try {
+            val pi = ctx.packageManager.packageInstaller
+            val params = android.content.pm.PackageInstaller.SessionParams(android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+            params.setAppPackageName(ctx.packageName)
+            val id = pi.createSession(params)
+            pi.openSession(id).use { s ->
+                s.openWrite("base.apk", 0, f.length()).use { out -> f.inputStream().use { it.copyTo(out, 1 shl 16) }; s.fsync(out) }
+                val flags = if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0
+                val sender = PendingIntent.getBroadcast(ctx, id, Intent(ctx, InstallReceiver::class.java).setPackage(ctx.packageName), flags or PendingIntent.FLAG_UPDATE_CURRENT).intentSender
+                s.commit(sender)
+            }
+            return true
+        } catch (e: Exception) {
+            // yedek yöntem
+            val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", f)
+            ctx.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK))
+            return true
         }
-        val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", f)
-        ctx.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK))
-        return true
     }
 }
 

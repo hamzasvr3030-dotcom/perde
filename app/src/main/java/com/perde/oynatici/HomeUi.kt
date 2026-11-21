@@ -35,6 +35,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -60,14 +61,16 @@ val TR: Locale = Locale.forLanguageTag("tr")
 // ---------------- ortak ----------------
 @Composable
 fun Page(title: String, back: (() -> Unit)?, actions: @Composable RowScope.() -> Unit = {}, fab: @Composable () -> Unit = {}, content: @Composable () -> Unit) {
+    val sb = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     Scaffold(
+        modifier = Modifier.nestedScroll(sb.nestedScrollConnection),
         containerColor = Bg, contentWindowInsets = WindowInsets(0, 0, 0, 0), floatingActionButton = fab,
         topBar = {
-            TopAppBar(
-                title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold) },
+            LargeTopAppBar(
+                title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Black) },
                 navigationIcon = { if (back != null) IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Geri") } },
-                actions = actions,
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
+                actions = actions, scrollBehavior = sb,
+                colors = TopAppBarDefaults.largeTopAppBarColors(containerColor = Bg, scrolledContainerColor = Surf)
             )
         }
     ) { pad -> Box(Modifier.padding(pad).fillMaxSize()) { content() } }
@@ -153,7 +156,7 @@ fun VideoRow(v: Video, selected: Boolean, selecting: Boolean, onClick: () -> Uni
             Text(v.title, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 15.sp, fontWeight = FontWeight.Medium)
             Text(videoSub(v), color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
         }
-        if (!selecting) IconButton(onClick = onMore) { Icon(Icons.Filled.MoreVert, "Seçenekler", tint = Muted) }
+        if (!selecting) IconButton(onClick = onMore) { Icon(Icons.Filled.MoreHoriz, "Seçenekler", tint = Muted) }
     }
 }
 
@@ -191,19 +194,19 @@ fun HomeScreen(vm: LibVM, go: (Route) -> Unit) {
     var ver by remember { mutableIntStateOf(0) }
     var folderSel by remember { mutableStateOf<Folder?>(null) }
     var videoSel by remember { mutableStateOf<Video?>(null) }
+    var metaFor by remember { mutableStateOf<Video?>(null) }
     Scaffold(containerColor = Bg, contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = {
         TopAppBar(
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(Brush.linearGradient(listOf(AccentSoft, Accent))), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.PlayArrow, null, tint = Color(0xFF14100E))
-                    }
-                    Text("Kadraj", fontWeight = FontWeight.Black, fontSize = 24.sp, modifier = Modifier.padding(start = 10.dp))
+                    KLogo(34.dp)
+                    Text("Kadraj", fontWeight = FontWeight.Black, fontSize = 26.sp, modifier = Modifier.padding(start = 10.dp))
                 }
             },
             actions = {
+                IconButton(onClick = { ctx.startActivity(Intent(ctx, ShortsActivity::class.java)) }) { Icon(Icons.Filled.Slideshow, "Kısa videolar") }
                 IconButton(onClick = { go(Route.Search) }) { Icon(Icons.Filled.Search, "Ara") }
-                GridToggle { ver++ }
+                IconButton(onClick = { Prefs.amoled = !Prefs.amoled; ThemeState.amoled = Prefs.amoled }) { Icon(Icons.Filled.Contrast, "Tam siyah tema") }
                 SortButton { ver++ }
             },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
@@ -227,13 +230,15 @@ fun HomeScreen(vm: LibVM, go: (Route) -> Unit) {
                         }
                     }
                 }
+                item { FilmsRow(vm, { v -> openInFolder(ctx, vm, v) }, { v -> metaFor = v }) }
                 item { SectionHeader("Son eklenenler") }
                 item {
                     LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         items(newest, key = { it.key }) { v ->
                             Column(Modifier.width(168.dp).combinedClickable(onClick = { openInFolder(ctx, vm, v) }, onLongClick = { videoSel = v })) {
                                 Thumb(v, Modifier.fillMaxWidth().aspectRatio(16 / 9f))
-                                Text(v.title, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 13.sp, modifier = Modifier.padding(top = 5.dp))
+                                Text(v.title, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 6.dp))
+                                Text("${File(v.folder).name} · ${fmtSize(v.size)}", maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp, color = Muted)
                             }
                         }
                     }
@@ -269,12 +274,30 @@ fun HomeScreen(vm: LibVM, go: (Route) -> Unit) {
                             if (row.size == 1) Spacer(Modifier.weight(1f))
                         }
                     }
-                } else items(folders, key = { it.path }) { f -> FolderRow(f, { go(Route.Videos(f.path)) }, { folderSel = f }) }
+                } else item {
+                    Column(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Surf)) {
+                        folders.forEachIndexed { i, f ->
+                            FolderRow(f, { go(Route.Videos(f.path)) }, { folderSel = f })
+                            if (i < folders.lastIndex) HorizontalDivider(Modifier.padding(start = 82.dp), color = Color.White.copy(alpha = 0.06f))
+                        }
+                    }
+                }
             }
         }
     }
     folderSel?.let { f -> FolderActions(f, vm, { folderSel = null }) { go(Route.Videos(f.path)) } }
     videoSel?.let { v -> VideoActions(v, vm, { videoSel = null }) { openInFolder(ctx, vm, v) } }
+    metaFor?.let { v -> MetaSheet(v) { metaFor = null } }
+}
+
+@Composable
+fun MetaSheet(v: Video, dismiss: () -> Unit) {
+    val ctx = LocalContext.current
+    ModalBottomSheet(onDismissRequest = dismiss, containerColor = Surf) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
+            MetaContent(v.key, File(v.path).name) { dismiss(); PlayerActivity.open(ctx, listOf(v), 0) }
+        }
+    }
 }
 
 private fun openInFolder(ctx: Context, vm: LibVM, v: Video) {
@@ -285,15 +308,20 @@ private fun openInFolder(ctx: Context, vm: LibVM, v: Video) {
 @Composable
 private fun HeroCard(v: Video, onClick: () -> Unit) {
     val p = Prefs.pos(v.key); val d = Prefs.dur(v.key)
-    Box(Modifier.width(280.dp).aspectRatio(16 / 9f).clip(RoundedCornerShape(18.dp)).clickable(onClick = onClick)) {
-        Thumb(v, Modifier.fillMaxSize(), showNew = false)
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xE6000000)), startY = 80f)))
-        Column(Modifier.align(Alignment.BottomStart).padding(12.dp)) {
-            Text(v.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (d > 0) Text("${fmtTime(p)} / ${fmtTime(d)} · %${(p * 100 / d)}", color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp)
+    Column(Modifier.width(290.dp).clip(RoundedCornerShape(18.dp)).background(Surf).pressable(onClick = onClick)) {
+        Box(Modifier.fillMaxWidth().aspectRatio(16 / 9f)) {
+            Thumb(v, Modifier.fillMaxSize(), showNew = false)
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xD0000000)), startY = 120f)))
+            Text(v.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.align(Alignment.BottomStart).padding(horizontal = 12.dp, vertical = 8.dp))
         }
-        Box(Modifier.align(Alignment.Center).size(48.dp).clip(CircleShape).background(Accent.copy(alpha = 0.9f)), contentAlignment = Alignment.Center) {
-            Icon(Icons.Filled.PlayArrow, null, tint = Color(0xFF14100E), modifier = Modifier.size(30.dp))
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.PlayArrow, null, tint = Color.White, modifier = Modifier.size(18.dp))
+            Text(fmtTime(p), fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp).weight(1f))
+            Text(fmtTime(d), fontSize = 13.sp, color = Muted)
+        }
+        if (d > 0) Box(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 10.dp).fillMaxWidth().height(4.dp).clip(CircleShape).background(Surf2)) {
+            Box(Modifier.fillMaxWidth((p.toFloat() / d).coerceIn(0f, 1f)).fillMaxHeight().clip(CircleShape).background(Accent))
         }
     }
 }
@@ -302,7 +330,7 @@ private fun HeroCard(v: Video, onClick: () -> Unit) {
 private fun FolderRow(f: Folder, onClick: () -> Unit, onLong: () -> Unit) {
     val newCount = f.videos.count { it.isNew }
     Row(Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLong).padding(horizontal = 16.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(54.dp).clip(RoundedCornerShape(15.dp)).background(Brush.linearGradient(listOf(AccentDeep, Surf2))), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(50.dp).clip(RoundedCornerShape(14.dp)).background(Accent.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
             Icon(Icons.Filled.Folder, null, tint = Accent, modifier = Modifier.size(30.dp))
         }
         Column(Modifier.weight(1f).padding(start = 14.dp)) {
@@ -313,7 +341,7 @@ private fun FolderRow(f: Folder, onClick: () -> Unit, onLong: () -> Unit) {
             Text("${f.videos.size} video · ${fmtSize(f.size)}", fontSize = 13.sp, color = Muted)
         }
         if (newCount > 0) Badge(containerColor = Accent) { Text("$newCount yeni", color = Color(0xFF14100E)) }
-        IconButton(onClick = onLong) { Icon(Icons.Filled.MoreVert, "Seçenekler", tint = Muted) }
+        IconButton(onClick = onLong) { Icon(Icons.Filled.MoreHoriz, "Seçenekler", tint = Muted) }
     }
 }
 
@@ -418,6 +446,7 @@ fun VideoActions(v: Video, vm: LibVM, dismiss: () -> Unit, play: () -> Unit) {
             ActionItem(Icons.Filled.DriveFileMove, "Başka klasöre taşı") { dialog = 6 }
             ActionItem(Icons.Filled.FileCopy, "Başka klasöre kopyala") { dialog = 7 }
             ActionItem(Icons.Filled.Lock, "Gizli klasöre taşı") { dialog = 4 }
+            ActionItem(Icons.Filled.Theaters, "Film / dizi bilgisi") { dialog = 8 }
             ActionItem(Icons.Filled.Info, "Özellikler") { dialog = 3 }
             ActionItem(Icons.Filled.Delete, "Sil", Color(0xFFFF6B6B)) { dialog = 2 }
         }
@@ -454,6 +483,7 @@ fun VideoActions(v: Video, vm: LibVM, dismiss: () -> Unit, play: () -> Unit) {
             confirmButton = { TextButton(onClick = { bg({ Library.moveToPrivate(ctx, v.path, v.uri) }, "Gizli klasöre taşındı", "Taşınamadı") }) { Text("Taşı") } },
             dismissButton = { TextButton(onClick = dismiss) { Text("Vazgeç") } })
         5 -> PlaylistPickerDialog(listOf(v.key), dismiss)
+        8 -> MetaSheet(v, dismiss)
         6, 7 -> FolderPickerDialog(vm, if (dialog == 7) "Kopyalanacak klasör" else "Taşınacak klasör", dismiss) { dir ->
             val copy = dialog == 7
             toast(ctx, if (copy) "Kopyalanıyor…" else "Taşınıyor…")

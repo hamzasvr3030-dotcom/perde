@@ -82,7 +82,7 @@ import java.io.File
 import java.util.Locale
 import com.google.android.gms.cast.MediaMetadata as CastMeta
 
-enum class Sheet { SUBS, AUDIO, SPEED, MORE, SLEEP, EQ, INFO, CLIP, CHAPTERS, BOOKMARKS, ONLINE, PLAYLIST, DOWNLOAD }
+enum class Sheet { SUBS, AUDIO, SPEED, MORE, SLEEP, EQ, INFO, CLIP, CHAPTERS, BOOKMARKS, ONLINE, PLAYLIST, DOWNLOAD, META }
 
 data class Ind(val kind: String, val text: String, val level: Float? = null)
 

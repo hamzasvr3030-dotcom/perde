@@ -63,6 +63,10 @@ object Prefs {
     // Müzik
     var musicRepeat by IntP("mRepeat", 2)
     var musicShuffle by BoolP("mShuffle", false)
+    var crossfade by IntP("xfade", 0)        // saniye: 0 kapalı
+    var skipSilence by BoolP("skipSil", false)
+    var onlineLyrics by BoolP("onLyr", true)
+    var autoMeta by BoolP("autoMeta", true)
 
     // Diğer
     var pinHash by StrP("pin", "")

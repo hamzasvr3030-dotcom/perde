@@ -372,7 +372,9 @@ class PlayerActivity : AppCompatActivity() {
             return true
         }
         val idx = i.getIntExtra(EXTRA_INDEX, 0).coerceIn(0, keys.size - 1)
-        val items = keys.mapIndexed { n, k ->
+        // tek video açıldıysa klasördeki sonraki bölümler de sıraya girsin
+        val more = if (keys.size == 1 && first.startsWith("/") && Prefs.folderNext) folderAfter(first) else emptyList()
+        val items = (keys + more).mapIndexed { n, k ->
             val t = titles?.getOrNull(n) ?: nameOf(k)
             buildItem(k, t, if (n == idx) subFor(k) else null)
         }
@@ -381,12 +383,13 @@ class PlayerActivity : AppCompatActivity() {
         Engine.abA = -1; Engine.abB = -1; ui.abA = -1; ui.abB = -1
         player.setMediaItems(items, idx, start)
         player.repeatMode = repeatModeOf(ui.repeat)
-        player.shuffleModeEnabled = ui.shuffle
+        Engine.resetShuffle()
         player.setPlaybackSpeed(1f)
         player.prepare()
         if (Prefs.resumeMode == 1 && saved > 0) { player.playWhenReady = false; ui.resumeAsk = saved }
         else { player.playWhenReady = true; if (start > 0) toast("Kaldığı yerden devam: ${fmtTime(start)}") }
         ui.title = items[idx].mediaMetadata.title?.toString() ?: ""
+        if (ui.shuffle) Engine.setShuffle(true)
         updateEndBehavior(); refreshSubState(); updateNav(); itemChanged()
         return true
     }
@@ -479,6 +482,13 @@ class PlayerActivity : AppCompatActivity() {
         // bu video için en son kullanılan parlaklık ve ses
         Levels.bright(k)?.let { b -> window.attributes = window.attributes.apply { screenBrightness = b.coerceIn(0.01f, 1f) } }
         Levels.vol(k)?.let { v -> setVolume(v) }
+        if (Prefs.rememberView) {
+            val sp = Prefs.sp
+            if (sp.contains("as:$k")) ui.aspect = sp.getInt("as:$k", 0).coerceIn(0, ASPECTS.size - 1)
+            if (sp.contains("zm:$k")) ui.zoom = sp.getFloat("zm:$k", 1f)
+            val o = if (sp.contains("or:$k")) sp.getInt("or:$k", 0).coerceIn(0, ORIENTS.size - 1) else Prefs.orient
+            if (o != ui.orient) { ui.orient = o; applyOrientation() }
+        }
         ui.chapters = emptyList()
         if (k.startsWith("/")) lifecycleScope.launch { ui.chapters = withContext(Dispatchers.IO) { Chapters.read(k) } }
         val ni = if (player.hasNextMediaItem()) player.getMediaItemAt(player.nextMediaItemIndex) else null
@@ -584,9 +594,10 @@ class PlayerActivity : AppCompatActivity() {
 
     fun setSpeed(s: Float) { val v = (Math.round(s * 100) / 100f).coerceIn(0.25f, 4f); player.setPlaybackSpeed(v); ui.speed = v }
 
-    fun cycleAspect() { ui.aspect = (ui.aspect + 1) % ASPECTS.size; ui.zoom = 1f; ui.pan = Offset.Zero; toast(ASPECTS[ui.aspect]) }
+    private fun saveView() { val k = curKey() ?: return; if (Prefs.rememberView) Prefs.sp.edit().putInt("as:$k", ui.aspect).putFloat("zm:$k", ui.zoom).putInt("or:$k", ui.orient).apply() }
+    fun cycleAspect() { ui.aspect = (ui.aspect + 1) % ASPECTS.size; ui.zoom = 1f; ui.pan = Offset.Zero; toast(ASPECTS[ui.aspect]); saveView() }
 
-    fun cycleOrient() { ui.orient = (ui.orient + 1) % ORIENTS.size; applyOrientation(); toast(ORIENTS[ui.orient]) }
+    fun cycleOrient() { ui.orient = (ui.orient + 1) % ORIENTS.size; applyOrientation(); toast(ORIENTS[ui.orient]); saveView() }
 
     fun applyOrientation() {
         requestedOrientation = when (ui.orient) {
@@ -603,7 +614,7 @@ class PlayerActivity : AppCompatActivity() {
         ui.repeat = (ui.repeat + 1) % 3; Prefs.repeat = ui.repeat; player.repeatMode = repeatModeOf(ui.repeat)
         updateEndBehavior(); toast(REPEATS[ui.repeat])
     }
-    fun toggleShuffle() { ui.shuffle = !ui.shuffle; Prefs.shuffle = ui.shuffle; player.shuffleModeEnabled = ui.shuffle; toast(if (ui.shuffle) "Karışık çalma açık" else "Karışık çalma kapalı") }
+    fun toggleShuffle() { ui.shuffle = !ui.shuffle; Prefs.shuffle = ui.shuffle; Engine.setShuffle(ui.shuffle); updateNav(); itemChanged(); toast(if (ui.shuffle) "Karışık çalma açık" else "Karışık çalma kapalı") }
     fun toggleBg() { ui.bg = !ui.bg; Prefs.bgPlay = ui.bg; toast(if (ui.bg) "Arka planda oynatma açık" else "Arka planda oynatma kapalı") }
     fun toggleNight() { ui.night = !ui.night; Engine.setNight(ui.night); toast(if (ui.night) "Gece modu açık: yüksek sesler kısılır, diyaloglar yükselir" else "Gece modu kapalı") }
     fun toggleFav() { val k = curKey() ?: return; ui.fav = Favs.toggle(k); toast(if (ui.fav) "Favorilere eklendi" else "Favorilerden çıkarıldı") }
@@ -642,8 +653,29 @@ class PlayerActivity : AppCompatActivity() {
     // ---- ekran görüntüsü ----
     fun screenshot() {
         if (ui.vw == 0 || ui.vh == 0) { toast("Görüntü henüz hazır değil"); return }
+        val k = curKey()
+        if (k != null && k.startsWith("/")) {
+            // yerel dosya: o anın karesini videonun kendi çözünürlüğünde çıkar
+            val at = player.currentPosition
+            ui.flash++
+            lifecycleScope.launch {
+                val f = withContext(Dispatchers.IO) {
+                    try {
+                        val r = android.media.MediaMetadataRetriever(); r.setDataSource(k)
+                        val b = r.getFrameAtTime(at * 1000, android.media.MediaMetadataRetriever.OPTION_CLOSEST); r.release()
+                        b?.let { MediaTools.saveImage(this@PlayerActivity, it, cleanTitle(ui.title) + "_" + fmtTime(at).replace(':', '.')) }
+                    } catch (_: Throwable) { null }
+                }
+                if (f != null) toast("Kare kaydedildi (${ui.vw}×${ui.vh}): Resimler/Kadraj") else screenshotView()
+            }
+            return
+        }
+        screenshotView()
+    }
+
+    private fun screenshotView() {
         val sv = playerView?.videoSurfaceView as? SurfaceView ?: run { toast("Ekran görüntüsü alınamadı"); return }
-        val s = minOf(1f, 1920f / maxOf(ui.vw, ui.vh))
+        val s = minOf(1f, 3840f / maxOf(ui.vw, ui.vh))
         val bmp = Bitmap.createBitmap((ui.vw * s).toInt().coerceAtLeast(2), (ui.vh * s).toInt().coerceAtLeast(2), Bitmap.Config.ARGB_8888)
         ui.flash++
         try {
@@ -792,7 +824,7 @@ class PlayerActivity : AppCompatActivity() {
         ui.pan = if (ui.zoom <= 1.01f) Offset.Zero else ui.pan + p
         showInd(Ind("zoom", "Yakınlaştırma %${(ui.zoom * 100).toInt()}"))
     }
-    fun pinchEnd() { showInd(ui.ind, 500) }
+    fun pinchEnd() { showInd(ui.ind, 500); saveView() }
 
     var longPressing = false
     private var speedBefore = 1f

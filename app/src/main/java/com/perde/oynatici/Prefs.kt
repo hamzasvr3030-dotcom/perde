@@ -59,7 +59,10 @@ object Prefs {
     var eqPreset by IntP("eqPreset", -1)
     var eqBands by StrP("eqBands", "")
     var bass by IntP("bass", 0)
-    var musicBoost by IntP("musicBoost", 0)   // müzikte %100 üstü ek ses (0–100)
+    var musicBoost by IntP("musicBoost", 0)
+    var resumeMusic by BoolP("resumeMusic", true)
+    var folderNext by BoolP("folderNext", true)
+    var rememberView by BoolP("rememberView", true)   // müzikte %100 üstü ek ses (0–100)
 
     // Müzik
     var musicRepeat by IntP("mRepeat", 2)
@@ -96,7 +99,7 @@ object Prefs {
     fun subOff(k: String) = sp.getLong("so:$k", 0)
     fun setSubOff(k: String, v: Long) { sp.edit().putLong("so:$k", v).apply() }
 
-    private val PER_KEY = listOf("p:", "d:", "t:", "s:", "so:", "bm:", "sv:", "pc:", "vol:", "br:")
+    private val PER_KEY = listOf("p:", "d:", "t:", "s:", "so:", "bm:", "sv:", "pc:", "vol:", "br:", "or:", "as:", "zm:")
     fun forget(k: String) { sp.edit().apply { PER_KEY.forEach { remove(it + k) } }.apply() }
 
     /** Dosya taşındığında/yeniden adlandırıldığında video bilgilerini yeni yola aktarır. */

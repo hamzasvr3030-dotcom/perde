@@ -132,6 +132,7 @@ fun MoreScreen(vm: LibVM, go: (Route) -> Unit) {
             }
             Group("Uygulama") {
                 GroupRow(Icons.Filled.SystemUpdate, "Güncellemeleri denetle", if (checking) "Denetleniyor…" else "Sürüm ${Updater.current(ctx)}", chevron = !checking) { checkUpdate() }
+                GroupRow(Icons.Filled.History, "Dinleme geçmişi", "Ne zaman ne dinledin") { go(Route.ListenHistR) }
                 GroupRow(Icons.Filled.BugReport, "Hata raporu", "Sorun olursa kopyalayıp gönder") { go(Route.ReportR) }
                 GroupRow(Icons.Filled.Info, "Uygulama hakkında", last = true) { go(Route.SettingsPage(6)) }
             }
@@ -164,6 +165,8 @@ fun SettingsPage(vm: LibVM, section: Int, back: () -> Unit) {
                             GroupSwitch(Icons.Filled.NightsStay, "Gece modu", "Yüksek sesleri kısar, konuşmaları yükseltir", Prefs.night) { Engine.setNight(it) }
                             GroupSwitch(Icons.Filled.VolumeUp, "Ses yükseltme (%200)", "Sağ tarafta yukarı kaydırınca", Prefs.boost) { Prefs.boost = it }
                             GroupSwitch(Icons.Filled.Image, "Sarma önizlemesi", "Sararken o anın küçük resmi", Prefs.seekThumbs) { Prefs.seekThumbs = it }
+                            GroupSwitch(Icons.Filled.SkipNext, "Klasördeki sonraki bölüme geç", "Tek video açınca da klasördeki sıradaki video sıraya girer", Prefs.folderNext) { Prefs.folderNext = it }
+                            GroupSwitch(Icons.Filled.ScreenRotation, "Yön ve yakınlaştırmayı hatırla", "Her video için en son kullandığın", Prefs.rememberView) { Prefs.rememberView = it }
                             GroupSwitch(Icons.Filled.Tune, "Ses ve parlaklığı hatırla", "Her video için en son ayarladığın değerler", Prefs.rememberLevels, last = true) { Prefs.rememberLevels = it }
                         }
                         Group("Dokunma hareketleri") {
@@ -181,6 +184,7 @@ fun SettingsPage(vm: LibVM, section: Int, back: () -> Unit) {
                         Group("Geçiş") {
                             SetChoice("Yumuşak geçiş", listOf("Kapalı", "2 sn", "4 sn", "6 sn", "8 sn", "12 sn"), listOf(0, 2, 4, 6, 8, 12).indexOf(Prefs.crossfade).coerceAtLeast(0)) { Prefs.crossfade = listOf(0, 2, 4, 6, 8, 12)[it]; ver++ }
                             GroupSwitch(Icons.Filled.SkipNext, "Sessizliği atla", "Şarkı başı ve sonundaki sessizlik", Prefs.skipSilence) { Prefs.skipSilence = it; Engine.player?.skipSilenceEnabled = it }
+                            GroupSwitch(Icons.Filled.History, "Şarkıları kaldığı yerden sürdür", "Yarıda bıraktığın şarkı oradan başlar", Prefs.resumeMusic) { Prefs.resumeMusic = it }
                             GroupSwitch(Icons.Filled.Headphones, "Kulaklık takınca devam et", "Kablolu ya da Bluetooth kulaklık bağlanınca son müzik sürer", Prefs.headsetResume) { Prefs.headsetResume = it }
                             GroupSwitch(Icons.Filled.VolumeUp, "Şarkıya göre sesi hatırla", null, Prefs.rememberLevels, last = true) { Prefs.rememberLevels = it }
                         }

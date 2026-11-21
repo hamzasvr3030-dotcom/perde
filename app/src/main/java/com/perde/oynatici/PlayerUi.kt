@@ -151,6 +151,8 @@ fun PlayerScreen(a: PlayerActivity) {
         if (ui.locked && !ui.inPip) LockOverlay(a)
 
         ui.countdown?.takeIf { !ui.inPip }?.let { CountdownCard(a, it, Modifier.align(Alignment.BottomEnd)) }
+        if (ui.countdown == null && !ui.inPip && !ui.locked && ui.hasNext && Prefs.autoNext != 2 && ui.dur > 20_000 && ui.dur - ui.pos in 1..8000 && ui.nextTitle.isNotEmpty())
+            UpNextHint(a, Modifier.align(Alignment.BottomEnd))
         ui.resumeAsk?.takeIf { !ui.inPip }?.let { ResumeCard(a, it, Modifier.align(Alignment.Center)) }
         ui.error?.let { ErrorCard(a, it, Modifier.align(Alignment.Center)) }
         ui.busy?.let { BusyCard(it, ui.busyProgress, Modifier.align(Alignment.Center)) }

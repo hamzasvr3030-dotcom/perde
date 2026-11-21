@@ -120,7 +120,7 @@ private fun PlayButtons(songs: List<Song>) {
         Button(onClick = { Engine.playSongs(ctx, songs, 0); AppState.showNow = true }, enabled = songs.isNotEmpty(), modifier = Modifier.weight(1f).height(52.dp), shape = CircleShape) {
             Icon(Icons.Filled.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Tümünü çal", fontSize = 16.sp, fontWeight = FontWeight.Bold)
         }
-        Button(onClick = { Engine.playSongs(ctx, songs.shuffled(), 0, shuffle = false); AppState.showNow = true }, enabled = songs.isNotEmpty(),
+        Button(onClick = { Engine.playSongs(ctx, songs, songs.indices.random(), shuffle = true); AppState.showNow = true }, enabled = songs.isNotEmpty(),
             modifier = Modifier.weight(1f).height(52.dp), shape = CircleShape, colors = ButtonDefaults.buttonColors(containerColor = Surf2, contentColor = Accent)) {
             Icon(Icons.Filled.Shuffle, null); Spacer(Modifier.width(6.dp)); Text("Karışık", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
         }
@@ -153,7 +153,8 @@ fun MusicScreen(vm: LibVM, go: (Route) -> Unit) {
         IconButton(onClick = { go(Route.MusicSearch) }) { Icon(Icons.Filled.Search, "Ara") }
         IconButton(onClick = { AppState.eqSheet = true }) { Icon(Icons.Filled.Equalizer, "Ekolayzer") }
         IconButton(onClick = { go(Route.SettingsPage(1)) }) { Icon(Icons.Filled.Settings, "Müzik ayarları") }
-        IconButton(onClick = { if (songs.isNotEmpty()) { Engine.playSongs(ctx, songs.shuffled(), 0); AppState.showNow = true } }) { Icon(Icons.Filled.Shuffle, "Karışık çal") }
+        IconButton(onClick = { go(Route.ListenHistR) }) { Icon(Icons.Filled.History, "Dinleme geçmişi") }
+        IconButton(onClick = { if (songs.isNotEmpty()) { Engine.playSongs(ctx, songs, songs.indices.random(), shuffle = true); AppState.showNow = true } }) { Icon(Icons.Filled.Shuffle, "Karışık çal") }
     }) {
         Column {
             val tabs = listOf("Şarkılar", "Albümler", "Sanatçılar", "Klasörler", "Listeler")
@@ -314,10 +315,12 @@ private fun SongActions(s: Song, vm: LibVM, dismiss: () -> Unit) {
             }
             ActionItem(Icons.Filled.PlayArrow, "Çal") { dismiss(); Engine.playSongs(ctx, listOf(s), 0) }
             ActionItem(Icons.AutoMirrored.Filled.QueueMusic, "Sıradaki olarak çal") {
-                val p = Engine.player
-                if (p != null && NowState.isMusic) { p.addMediaItem(p.currentMediaItemIndex + 1, Music.item(s)); toast(ctx, "Sıraya eklendi") }
-                else Engine.playSongs(ctx, listOf(s), 0)
-                dismiss()
+                val playing = Engine.player != null && NowState.isMusic
+                Engine.enqueue(ctx, listOf(s), next = true); if (playing) toast(ctx, "Bu şarkıdan sonra çalacak"); dismiss()
+            }
+            ActionItem(Icons.AutoMirrored.Filled.PlaylistAdd, "Sıranın sonuna ekle") {
+                val playing = Engine.player != null && NowState.isMusic
+                Engine.enqueue(ctx, listOf(s), next = false); if (playing) toast(ctx, "Sıranın sonuna eklendi"); dismiss()
             }
             ActionItem(if (Favs.has(s.key)) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, if (Favs.has(s.key)) "Favorilerden çıkar" else "Favorilere ekle") { Favs.toggle(s.key); vm.bump(); dismiss() }
             ActionItem(Icons.AutoMirrored.Filled.PlaylistAdd, "Listeye ekle") { dialog = 1 }
@@ -395,7 +398,7 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
     var lyricsSrc by remember { mutableStateOf("") }
     var sheet by remember { mutableStateOf<NpSheet?>(null) }
     var repeat by remember { mutableIntStateOf(p.repeatMode) }
-    var shuffle by remember { mutableStateOf(p.shuffleModeEnabled) }
+    var shuffle by remember { mutableStateOf(Engine.shuffled) }
     var fav by remember(key) { mutableStateOf(Favs.has(key)) }
     var sleepLabel by remember { mutableStateOf("") }
     LaunchedEffect(Unit) {
@@ -516,7 +519,7 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
         }
 
         Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { shuffle = !shuffle; p.shuffleModeEnabled = shuffle; Prefs.musicShuffle = shuffle }) {
+            IconButton(onClick = { shuffle = !shuffle; Engine.setShuffle(shuffle); Prefs.musicShuffle = shuffle; toast(ctx, if (shuffle) "Karışık: sıra karıştırıldı" else "Karışık kapalı: eski sıra") }) {
                 Icon(Icons.Filled.Shuffle, "Karışık", tint = if (shuffle) Accent else Color.White.copy(alpha = 0.7f))
             }
             GlassButton(Icons.Filled.SkipPrevious, "Önceki", 56.dp, 32.dp) { if (p.currentPosition > 4000) p.seekTo(0) else p.seekToPreviousMediaItem() }
@@ -622,7 +625,7 @@ private fun QueueContent() {
     var dragOff by remember { mutableFloatStateOf(0f) }
     Column(Modifier.padding(bottom = 20.dp)) {
         Text("Çalma sırası (${items.size})", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp))
-        Text("Sıralamak için sağdaki tutamaçtan sürükle", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp))
+        Text(if (Engine.shuffled) "Karışık sıra · gerçekten bu sırayla çalacak · sürükleyerek değiştir" else "Sıralamak için sağdaki tutamaçtan sürükle", color = if (Engine.shuffled) Accent else Muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp))
         LazyColumn(Modifier.heightIn(max = 520.dp), state = rememberLazyListState((p.currentMediaItemIndex - 2).coerceAtLeast(0))) {
             itemsIndexed(items, key = { i, it -> "${it.mediaId}#$i" }) { i, it ->
                 val current = i == p.currentMediaItemIndex

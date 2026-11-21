@@ -35,6 +35,8 @@ import java.util.concurrent.Executors
 /** İndirme ayarları. */
 object DlPrefs {
     var height by IntP("dlH", 1080)
+    var playWhenDone by BoolP("dlPlayDone", false)
+    var audioToList by BoolP("dlToList", true)
     var audioFmt by StrP("dlFmt", "m4a")
     var kbps by IntP("dlKbps", 192)
     var subs by BoolP("dlSubs", true)
@@ -340,20 +342,40 @@ object Dl {
             if (gj.none { it.active }) notifyDone(c, "${g.title}: ${gj.count { it.state == Job.DONE || it.state == Job.SKIP }}/${gj.size} indirildi",
                 gj.count { it.state == Job.ERR }.let { if (it > 0) "$it video indirilemedi" else "Tamamlandı" })
         } } ?: run {
-            if (j.state == Job.DONE) notifyDone(c, "İndirildi", j.title)
+            if (j.state == Job.DONE) {
+                notifyDone(c, "İndirildi", j.title, j.file)
+                val f = j.file
+                if (f != null && j.opts.audio && DlPrefs.audioToList && !j.url.startsWith("file:")) {
+                    val pl = Playlists.all().firstOrNull { it.name == "İndirilenler" } ?: Playlists.create("İndirilenler")
+                    Playlists.setItems(pl.id, (listOf(f) + (Playlists.get(pl.id)?.items ?: emptyList())).distinct())
+                }
+                if (f != null && DlPrefs.playWhenDone && Fg.visible && jobs.none { it.active && it !== j }) android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ AppState.playFile = f }, 1500)
+            }
             if (j.state == Job.ERR && !j.netErr) notifyDone(c, "İndirilemedi", "${j.title} · ${j.error}")
         }
         doneTick++
         save(); pump()
     }
 
-    private fun notifyDone(c: Context, title: String, text: String) {
+    /** Daha önce indirilip hâlâ telefonda duran dosya (bağlantıya göre). */
+    fun existing(url: String): String? {
+        val id = Web.idOf(url)
+        return (jobs.filter { it.state == Job.DONE || it.state == Job.SKIP }.mapNotNull { j -> j.file?.takeIf { j.url == url || (id != null && Web.idOf(j.url) == id) } } +
+            history.filter { it.ok && it.file != null && (it.url == url || (id != null && it.key == id)) }.mapNotNull { it.file })
+            .firstOrNull { File(it).exists() }
+    }
+
+    private fun notifyDone(c: Context, title: String, text: String, file: String? = null) {
         val nm = c.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         DownloadService.channel(nm)
         val open = PendingIntent.getActivity(c, 8, Intent(c, MainActivity::class.java).putExtra("openDownloads", true)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE)
         nm.notify((title + text).hashCode(), NotificationCompat.Builder(c, "dl").setSmallIcon(R.drawable.ic_download)
-            .setContentTitle(title).setContentText(text).setAutoCancel(true).setContentIntent(open).build())
+            .setContentTitle(title).setContentText(text).setAutoCancel(true).setContentIntent(open).apply {
+                if (file != null) addAction(0, if (isAudioName(file)) "Çal" else "İzle", PendingIntent.getActivity(c, file.hashCode(),
+                    Intent(c, MainActivity::class.java).putExtra("playFile", file).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
+            }.build())
     }
 
     // ---------------- asıl indirme ----------------

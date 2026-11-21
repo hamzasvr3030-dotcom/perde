@@ -16,6 +16,8 @@ class App : Application(), SingletonImageLoader.Factory {
         Prefs.init(this)
         ThemeState.load()
         Report.init(this)
+        ListenLog.init(this)
+        Fg.init(this)
         MediaWatch.start(this)
         Headset.start(this)
     }

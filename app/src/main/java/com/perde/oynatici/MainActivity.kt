@@ -90,6 +90,7 @@ sealed interface Route {
     data class SettingsPage(val section: Int) : Route
     data object CleanupR : Route
     data object ReportR : Route
+    data object ListenHistR : Route
     data object SmbList : Route
     data class SmbBrowse(val server: SmbServer, val path: String) : Route
     data object Transfer : Route
@@ -104,6 +105,7 @@ sealed interface Route {
 /** Uygulama genelinde paylaşılan arayüz durumu. */
 object AppState {
     var showNow by mutableStateOf(false)
+    var playFile by mutableStateOf<String?>(null)
     var tab by mutableIntStateOf(0)
     var update by mutableStateOf<Updater.Rel?>(null)
     var sharedUrl by mutableStateOf<String?>(null)
@@ -168,6 +170,7 @@ class MainActivity : AppCompatActivity() {
         if (i.getBooleanExtra("openDownloads", false)) AppState.openNet++
         i.getIntExtra("tab", -1).takeIf { it in 0..4 }?.let { AppState.tab = it; AppState.showNow = false }
         if (i.getBooleanExtra("fromClipTile", false)) AppState.forceClip = true
+        i.getStringExtra("playFile")?.let { AppState.playFile = it }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -228,6 +231,8 @@ fun MainApp() {
         }
     }
     LaunchedEffect(Dl.doneTick) { if (Dl.doneTick > 0) { delay(1200); vm.reload() } }
+    val pfCtx = LocalContext.current
+    LaunchedEffect(AppState.playFile) { AppState.playFile?.let { f -> AppState.playFile = null; playFile(pfCtx, f) } }
     LaunchedEffect(MediaWatch.tick) { if (MediaWatch.tick > 0) { delay(2500); vm.reload(announce = true) } }
     Surface(color = Bg, modifier = Modifier.fillMaxSize()) {
         if (!granted) PermissionScreen { granted = hasStorage(ctx); if (granted) vm.reload() }
@@ -313,6 +318,7 @@ private fun Shell(vm: LibVM) {
                 is Route.SettingsPage -> SettingsPage(vm, r.section, back)
                 Route.CleanupR -> CleanupScreen(vm, back)
                 Route.ReportR -> ReportScreen(back)
+                Route.ListenHistR -> ListenHistoryScreen(back)
                 Route.SmbList -> SmbListScreen(go, back)
                 is Route.SmbBrowse -> SmbBrowseScreen(r.server, r.path, go, back)
                 Route.Transfer -> TransferScreen(back)

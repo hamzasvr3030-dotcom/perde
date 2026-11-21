@@ -10,6 +10,7 @@ import android.os.Looper
 import android.os.SystemClock
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.BaseAudioProcessor
@@ -71,7 +72,7 @@ object Engine {
                     Stats.tick(k, 250)
                     playMs += 250
                     // 30 sn'den fazla dinlenen şarkı "çalındı" sayılır (akıllı listeler için)
-                    if (!counted && playMs >= 30_000 && k != null) { counted = true; Stats.countPlay(k) }
+                    if (!counted && playMs >= 30_000 && k != null) { counted = true; Stats.countPlay(k); ListenLog.add(k, p.currentMediaItem?.mediaMetadata) }
                 }
                 if (p.isPlaying && SystemClock.elapsedRealtime() - lastSave > 5000) savePos()
             }
@@ -81,6 +82,51 @@ object Engine {
     }
 
     private var lastMusicKey: String? = null
+
+    // ---- gerçek karıştırma: liste fiziksel olarak karıştırılır, kapatınca eski sıraya döner ----
+    var shuffled = false; private set
+    private var origOrder: List<MediaItem> = emptyList()
+
+    fun setShuffle(on: Boolean) {
+        val p = player ?: return
+        if (p.shuffleModeEnabled) p.shuffleModeEnabled = false
+        val n = p.mediaItemCount; val cur = p.currentMediaItemIndex
+        if (on && !shuffled && n > 1) {
+            origOrder = (0 until n).map { p.getMediaItemAt(it) }
+            val curItem = origOrder[cur]
+            val now = System.currentTimeMillis()
+            val mixed = SmartShuffle.order(origOrder.filterIndexed { i, _ -> i != cur }, { it.mediaMetadata.artist?.toString() ?: "" },
+                { now - Prefs.playedAt(it.mediaId) < 12 * 3_600_000L }, curItem.mediaMetadata.artist?.toString())
+            if (cur + 1 < n) p.removeMediaItems(cur + 1, n)
+            if (cur > 0) p.removeMediaItems(0, cur)
+            p.addMediaItems(mixed)
+        } else if (!on && shuffled && origOrder.isNotEmpty() && n > 0) {
+            val now = (0 until n).map { p.getMediaItemAt(it) }
+            val nowIds = now.map { it.mediaId }.toHashSet(); val origIds = origOrder.map { it.mediaId }.toHashSet()
+            val full = origOrder.filter { it.mediaId in nowIds } + now.filter { it.mediaId !in origIds }
+            val oi = full.indexOfFirst { it.mediaId == p.currentMediaItem?.mediaId }
+            if (oi >= 0) {
+                if (cur + 1 < n) p.removeMediaItems(cur + 1, n)
+                if (cur > 0) p.removeMediaItems(0, cur)
+                if (oi > 0) p.addMediaItems(0, full.subList(0, oi))
+                if (oi + 1 < full.size) p.addMediaItems(full.subList(oi + 1, full.size))
+            }
+        }
+        if (!on) origOrder = emptyList()
+        shuffled = on && n > 1
+        NowState.refresh()
+    }
+
+    /** Yeni liste yüklenince karıştırma durumunu sıfırla. */
+    fun resetShuffle() { shuffled = false; origOrder = emptyList(); player?.let { if (it.shuffleModeEnabled) it.shuffleModeEnabled = false } }
+
+    fun enqueue(ctx: Context, songs: List<Song>, next: Boolean) {
+        val p = player
+        if (p == null || p.mediaItemCount == 0 || !NowState.isMusic) { playSongs(ctx, songs, 0); return }
+        val items = songs.map { Music.item(it) }
+        if (next) p.addMediaItems(p.currentMediaItemIndex + 1, items) else p.addMediaItems(items)
+        if (shuffled) origOrder = origOrder + items
+    }
     private var musicBoostOn = false
 
     /** Müzikte ses yükseltme: %100 + musicBoost (en çok %200), videodaki gibi LoudnessEnhancer ile. */
@@ -100,6 +146,11 @@ object Engine {
         LastQueue.save((0 until minOf(p.mediaItemCount, 500)).map { p.getMediaItemAt(it).mediaId }, p.currentMediaItemIndex, p.currentPosition)
         val k = item.mediaId
         if (k == lastMusicKey) return
+        // her şarkı kaldığı yerden sürer (sonuna kadar dinlenenler baştan başlar)
+        if (Prefs.resumeMusic && lastMusicKey != null || Prefs.resumeMusic && p.currentPosition < 1500) {
+            val sp = Prefs.pos(k); val d = Prefs.dur(k)
+            if (sp > 5000 && (d <= 0 || sp < d - 10_000) && p.currentPosition < 3000) p.seekTo(sp)
+        }
         val am = appCtx?.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager ?: return
         val max = am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC).toFloat()
         lastMusicKey?.let { Levels.saveVol(it, am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) / max) }
@@ -153,6 +204,8 @@ object Engine {
             .setSelectUndeterminedTextLanguage(true).build()
         p.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) { if (!isPlaying) { savePos(); Stats.flush() } else ensureEffects() }
+            // bildirimden/kulaklıktan karıştırma açılırsa da listeyi gerçekten karıştır (sıra ekranında görünsün)
+            override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) { if (shuffleModeEnabled) handler.post { setShuffle(true) } }
             override fun onEvents(player: Player, events: Player.Events) {
                 if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_IS_PLAYING_CHANGED)) musicBookkeeping(p)
                 if (events.containsAny(Player.EVENT_IS_PLAYING_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_MEDIA_METADATA_CHANGED, Player.EVENT_TIMELINE_CHANGED)) {
@@ -244,8 +297,9 @@ object Engine {
         val p = get(ctx)
         p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, false).build()
         p.pauseAtEndOfMediaItems = false
+        resetShuffle()
         p.setMediaItems(songs.map { Music.item(it) }, index.coerceIn(0, songs.size - 1), 0)
-        p.shuffleModeEnabled = shuffle
+        if (shuffle) setShuffle(true)
         p.repeatMode = when (Prefs.musicRepeat) { 1 -> Player.REPEAT_MODE_ONE; 2 -> Player.REPEAT_MODE_ALL; else -> Player.REPEAT_MODE_OFF }
         p.setPlaybackSpeed(1f)
         p.skipSilenceEnabled = Prefs.skipSilence

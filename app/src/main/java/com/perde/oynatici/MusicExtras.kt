@@ -119,7 +119,7 @@ fun SmartListScreen(vm: LibVM, type: Int, back: () -> Unit) {
             item {
                 Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(onClick = { Engine.playSongs(ctx, songs, 0); AppState.showNow = true }) { Icon(Icons.Filled.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Çal") }
-                    FilledTonalButton(onClick = { Engine.playSongs(ctx, songs.shuffled(), 0); AppState.showNow = true }) { Icon(Icons.Filled.Shuffle, null); Spacer(Modifier.width(6.dp)); Text("Karışık") }
+                    FilledTonalButton(onClick = { Engine.playSongs(ctx, songs, songs.indices.random(), shuffle = true); AppState.showNow = true }) { Icon(Icons.Filled.Shuffle, null); Spacer(Modifier.width(6.dp)); Text("Karışık") }
                     OutlinedButton(onClick = { Playlists.create(SmartLists.NAMES[type], songs.map { it.key }); toast(ctx, "Liste olarak kaydedildi") }) { Text("Kaydet") }
                 }
             }

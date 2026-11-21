@@ -146,6 +146,7 @@ fun DownloadScreen(go: (Route) -> Unit) {
                 }
                 if (urls.size > 1) item { BulkCard(urls) { audio -> ask(DlReq.Singles(urls.map { Triple(it, Web.site(it), null) }), audio) } }
                 else if (single != null) {
+                    Dl.existing(single)?.let { have -> item { AlreadyHaveCard(have) } }
                     if (loading && analysis == null) item { LoadingCard(single, preview) }
                     err?.let { e -> item { Text("⚠ $e", color = BAD, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Surf).padding(14.dp)) } }
                     when (val a = analysis) {
@@ -588,6 +589,8 @@ fun DlSettingsContent() {
     LaunchedEffect(Unit) { ytver = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Web.version(ctx) } }
     key(ver) {
         Text("İndirme ayarları", fontSize = 21.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp))
+        SetSwitch("Bitince hemen aç", "Uygulama açıksa indirilen video/şarkı kendiliğinden başlar", DlPrefs.playWhenDone) { DlPrefs.playWhenDone = it }
+        SetSwitch("Şarkıları 'İndirilenler' listesine ekle", "Ses olarak indirdiklerin Müzik › Listeler'de toplanır", DlPrefs.audioToList) { DlPrefs.audioToList = it }
         SetSwitch("Sadece Wi-Fi'de indir", "Mobil veride indirmeler bekletilir", DlPrefs.wifiOnly) { DlPrefs.wifiOnly = it; Dl.pump() }
         SetChoice("Aynı anda indirme", listOf("1", "2", "3", "4", "5", "6"), (DlPrefs.parallel - 1).coerceIn(0, 5)) { DlPrefs.parallel = it + 1; ver++; Dl.pump() }
         SetSwitch("Hızlı indirme", "YouTube dosyasını 16 parçaya bölüp aynı anda indirir", DlPrefs.fast) { DlPrefs.fast = it }

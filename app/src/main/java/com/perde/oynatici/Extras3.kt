@@ -68,7 +68,7 @@ class BrowserActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         CookieManager.getInstance().setAcceptCookie(true)
         onBackPressedDispatcher.addCallback(this) { if (web?.canGoBack() == true) web?.goBack() else finish() }
-        setContent { PerdeTheme { BrowserScreen(this, intent.getStringExtra("url")) } }
+        setContent { PerdeTheme { androidx.compose.material3.Surface(color = Bg, contentColor = androidx.compose.material3.MaterialTheme.colorScheme.onBackground) { BrowserScreen(this, intent.getStringExtra("url")) } } }
     }
     override fun onPause() { super.onPause(); web?.onPause(); Cookies.save(this) }
     override fun onResume() { super.onResume(); web?.onResume() }

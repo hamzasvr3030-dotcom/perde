@@ -110,7 +110,6 @@ fun MoreScreen(vm: LibVM, go: (Route) -> Unit) {
                 GroupRow(Icons.Filled.CleaningServices, "Yer aç", "İzlediğin eski videoları sil") { go(Route.CleanupR) }
                 GroupRow(Icons.Filled.Storage, "Depolama analizi") { go(Route.StorageR) }
                 GroupRow(Icons.Filled.ContentCopy, "Kopya dosyalar") { go(Route.DupR) }
-                GroupRow(Icons.Filled.Slideshow, "Kısa videolar") { ctx.startActivity(android.content.Intent(ctx, ShortsActivity::class.java)) }
                 GroupRow(Icons.Filled.Favorite, "Favoriler", tint = Color(0xFFFF5C7A)) { go(Route.Favorites) }
                 GroupRow(Icons.AutoMirrored.Filled.PlaylistPlay, "Listeler", last = true) { go(Route.Playlists) }
             }

@@ -200,7 +200,6 @@ fun HomeScreen(vm: LibVM, go: (Route) -> Unit) {
     var metaFor by remember { mutableStateOf<Video?>(null) }
     Scaffold(containerColor = Bg, contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = {
         BigHeader("Videolar") {
-            IconButton(onClick = { ctx.startActivity(Intent(ctx, ShortsActivity::class.java)) }) { Icon(Icons.Filled.Slideshow, "Kısa videolar") }
             IconButton(onClick = { go(Route.Search) }) { Icon(Icons.Filled.Search, "Ara") }
             SortButton { ver++ }
         }

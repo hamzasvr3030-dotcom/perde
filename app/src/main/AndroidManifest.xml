@@ -125,12 +125,6 @@
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_recent_info" />
         </receiver>
 
-        <activity
-            android:name=".ShortsActivity"
-            android:exported="false"
-            android:screenOrientation="portrait"
-            android:theme="@style/Theme.Perde.Player" />
-
         <receiver android:name=".InstallReceiver" android:exported="false" />
         <receiver android:name=".DlAlarmReceiver" android:exported="false" />
 

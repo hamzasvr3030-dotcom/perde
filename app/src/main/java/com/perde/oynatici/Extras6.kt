@@ -336,7 +336,8 @@ fun SummaryScreen(vm: LibVM, back: () -> Unit) {
     val dls = remember(ym) { val f = SimpleDateFormat("yyyyMM", Locale.ROOT); Dl.history.filter { it.ok && f.format(Date(it.at)) == ym } }
     val dlSize = remember(dls) { dls.sumOf { h -> h.file?.let { File(it).length() } ?: 0L } }
     val head = when { music > 0 -> "${ago.let { if (it == 0) "Bu ay" else "O ay" }} ${music / 3_600_000} saat\nmüzik dinledin."; total > 0 -> "Bu ay ${fmtDur(total)}\nKadraj'daydın."; else -> "Henüz yeterli\nveri yok." }
-    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Accent, Color(0xFF5B2A86), Bg)))) {
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides Color.White) {
+    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Accent, Color(0xFF5B2A86), Color(0xFF0B0B0E))))) {
         LazyColumn(Modifier.windowInsetsPadding(WindowInsets.statusBars), contentPadding = PaddingValues(start = 22.dp, end = 22.dp, bottom = 30.dp)) {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
@@ -391,6 +392,7 @@ fun SummaryScreen(vm: LibVM, back: () -> Unit) {
                 }
             } else item { Text("Bu ay için şarkı geçmişi yok. Dinledikçe burada en sevdiklerin çıkar.", color = Color.White.copy(alpha = 0.8f), modifier = Modifier.padding(top = 20.dp)) }
         }
+    }
     }
 }
 

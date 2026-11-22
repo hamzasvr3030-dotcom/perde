@@ -103,7 +103,7 @@ object Web {
         val app = ctx.applicationContext
         appCtx = app
         YoutubeDL.getInstance().init(app)
-        try { FFmpeg.getInstance().init(app) } catch (_: Exception) { }
+        try { FFmpeg.getInstance().init(app) } catch (e: Exception) { Report.err("ffmpeg başlatılamadı", e) }
         ready = true
     }
 
@@ -116,7 +116,7 @@ object Web {
             init(ctx)
             Prefs.sp.edit().putLong("ytdlpUpd", System.currentTimeMillis()).apply()
             YoutubeDL.getInstance().updateYoutubeDL(ctx.applicationContext, YoutubeDL.UpdateChannel._STABLE)
-        } catch (_: Exception) { }
+        } catch (e: Exception) { Report.err("yt-dlp güncellenemedi", e) }
     }
 
     fun version(ctx: Context): String = try { init(ctx); YoutubeDL.getInstance().versionName(ctx.applicationContext) ?: "?" } catch (_: Exception) { "?" }

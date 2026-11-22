@@ -188,16 +188,16 @@ object Dl {
                 job.phase = phaseText(job)
                 jobs += job
             }
-        } catch (_: Exception) { }
+        } catch (e: Exception) { if (e !is java.io.FileNotFoundException) qFile().keepBroken("kuyruk okuma", e) }
     }
 
-    fun save() {
+    @Synchronized fun save() {
         val c = app ?: return
         try {
             val o = JSONObject().put("g", JSONArray().apply { groups.forEach { put(it.json()) } })
                 .put("j", JSONArray().apply { jobs.take(400).forEach { put(it.json()) } })
-            File(c.filesDir, "dl_queue.json").writeText(o.toString())
-        } catch (_: Exception) { }
+            File(c.filesDir, "dl_queue.json").writeSafe(o.toString())
+        } catch (e: Exception) { Report.err("kuyruk kaydı", e) }
     }
 
     private fun loadHistory() {
@@ -207,18 +207,18 @@ object Dl {
                 history += HistItem(h.optString("k"), h.optString("t"), h.optString("u"), h.optString("f").ifEmpty { null }, h.optBoolean("a"),
                     h.optLong("at"), h.optBoolean("ok"), h.optString("n"))
             }
-        } catch (_: Exception) { }
+        } catch (e: Exception) { if (e !is java.io.FileNotFoundException) hFile().keepBroken("indirme geçmişi okuma", e) }
     }
 
-    private fun saveHistory() {
+    @Synchronized private fun saveHistory() {
         try {
             val a = JSONArray()
             history.take(1000).forEach { h ->
                 a.put(JSONObject().put("k", h.key).put("t", h.title).put("u", h.url).put("f", h.file ?: "").put("a", h.audio)
                     .put("at", h.at).put("ok", h.ok).put("n", h.note))
             }
-            hFile().writeText(a.toString())
-        } catch (_: Exception) { }
+            hFile().writeSafe(a.toString())
+        } catch (e: Exception) { Report.err("indirme geçmişi kaydı", e) }
     }
 
     fun clearHistory() { history.clear(); saveHistory() }
@@ -506,7 +506,7 @@ object Dl {
     }
     private fun sizeFile(c: Context, j: Job) = File(c.cacheDir, "dlsize_${j.id}.txt")
 
-    private fun build(c: Context, j: Job, subs: Boolean, pathFile: File, safe: Boolean = false): YoutubeDLRequest {
+    private fun build(c: Context, j: Job, subs: Boolean, pathFile: File, safe: Boolean = false, onePass: Boolean = DlPrefs.onePass): YoutubeDLRequest {
         val o = j.opts
         val local = j.url.startsWith("file:")
         val info = if (!safe && !j.url.startsWith("ytsearch") && !local) Web.freshInfo(c, j.url) else null
@@ -553,7 +553,7 @@ object Dl {
             val av1 = if (h > 1080) "" else "[vcodec!^=av01]"
             r.addOption("-f", "bv*[height<=$h][ext=mp4]$av1+ba[ext=m4a]/bv*[height<=$h]$av1+ba/b[height<=$h]/bv*+ba/b")
             r.addOption("--merge-output-format", "mp4")
-            if (DlPrefs.onePass && !safe && !local) {
+            if (onePass && !safe && !local) {
                 // ffmpeg görüntüyü ve sesi aynı anda çekip doğrudan tek mp4'e yazar: indirme bitince birleştirme beklenmez
                 r.addOption("--downloader", "ffmpeg")
                 r.addOption("--downloader-args", "ffmpeg_i:-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5")
@@ -591,6 +591,7 @@ object Dl {
         val pathFile = File(c.cacheDir, "dlpath_${j.id}.txt").apply { delete() }
         var subs = j.opts.subs && !j.opts.audio
         var safe = false
+        var onePass = DlPrefs.onePass
         var attempt = 0
         while (true) {
             attempt++
@@ -598,7 +599,7 @@ object Dl {
             j.expected = 0; sizeFile(c, j).delete()
             val stopWatch = startDiskWatch(j, tmpDir(c, j), sizeFile(c, j))
             try {
-                val res = YoutubeDL.getInstance().execute(build(c, j, subs, pathFile, safe), j.id) { p, _, line -> onProgress(j, p, line) }
+                val res = YoutubeDL.getInstance().execute(build(c, j, subs, pathFile, safe, onePass), j.id) { p, _, line -> onProgress(j, p, line) }
                 out = res.out + "\n" + res.err
             } catch (e: YoutubeDL.CanceledException) {
                 stopWatch(); j.state = if (j.pauseReq) Job.PAUSED else Job.CANCEL; j.pauseReq = false; return
@@ -633,6 +634,12 @@ object Dl {
                     return
                 }
                 err != null && subs && "subtitle" in out.lowercase() && attempt < 3 -> { subs = false; continue }
+                // tek seferde indirme (ffmpeg) bu sitede/videoda olmadı: ayrı indirip birleştirerek tekrar dene
+                err != null && onePass && !j.opts.audio && !Web.isNetworkError(out) && attempt < 4 -> {
+                    onePass = false; j.phase = "Başka yöntemle yeniden deneniyor…"; j.exactSeen = false
+                    try { tmpDir(c, j).deleteRecursively() } catch (_: Exception) { }   // yarım dosya ilerlemeyi bozmasın
+                    Report.log("indirme", "${j.url} → tek seferde indirme olmadı, ayrı indirilecek"); continue
+                }
                 // 403 "erişim reddedildi": analiz bilgisindeki adresler eskimiş/başka ağdan alınmış ya da çok fazla paralel bağlantı.
                 // Taze adresle, çerezsiz, daha az bağlantıyla ve güncel yt-dlp ile tekrar dene.
                 err != null && !safe && attempt < 4 && ("403" in out || "forbidden" in out.lowercase()) -> {
@@ -660,7 +667,7 @@ object Dl {
                 follows += Follow(f.getString("u"), f.getString("t"), DlOpts.from(f.getJSONObject("o")), f.optLong("p", -1).takeIf { it >= 0 },
                     (0 until k.length()).map { k.getString(it) }.toSet(), (0 until n.length()).map { n.getString(it) }, f.optString("d"))
             }
-        } catch (_: Exception) { }
+        } catch (e: Exception) { Report.err("takip listesi okuma", e) }
     }
 
     fun saveFollows() {

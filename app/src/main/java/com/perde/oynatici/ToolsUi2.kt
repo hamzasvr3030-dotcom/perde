@@ -59,7 +59,7 @@ fun StorageScreen(vm: LibVM, back: () -> Unit, go: (Route) -> Unit = {}) {
                     Text("Boş: ${fmtSize(i.free)}", color = Muted)
                     Spacer(Modifier.height(12.dp))
                     Canvas(Modifier.fillMaxWidth().height(18.dp).clip(CircleShape)) {
-                        drawRoundRect(Color(0xFF2A2D36), cornerRadius = CornerRadius(size.height))
+                        drawRoundRect(Surf2, cornerRadius = CornerRadius(size.height))
                         var x = 0f
                         parts.forEach { (_, v, c) -> val w = size.width * v / i.total; drawRect(c, Offset(x, 0f), Size(w, size.height)); x += w }
                     }

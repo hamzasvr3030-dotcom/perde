@@ -58,7 +58,7 @@ object MediaWatch {
         try {
             ctx.contentResolver.registerContentObserver(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, obs)
             ctx.contentResolver.registerContentObserver(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, true, obs)
-        } catch (_: Exception) { }
+        } catch (e: Exception) { Report.err("medya izleyici", e) }
     }
 }
 

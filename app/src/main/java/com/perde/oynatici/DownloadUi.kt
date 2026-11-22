@@ -418,7 +418,7 @@ private fun sourceOf(url: String, audio: Boolean, list: Boolean = false): Pair<I
         site == "YouTube" -> Icons.Filled.SmartDisplay to Color(0xFFFF3B30)
         site == "Instagram" -> Icons.Filled.CameraAlt to Color(0xFFE1306C)
         site == "TikTok" -> Icons.Filled.MusicVideo to Color(0xFF25F4EE)
-        site.startsWith("X") -> Icons.Filled.Tag to Color(0xFFDDDDDD)
+        site.startsWith("X") -> Icons.Filled.Tag to Color(0xFF8E8E93)
         site == "Facebook" -> Icons.Filled.Facebook to Color(0xFF1877F2)
         site == "SoundCloud" -> Icons.Filled.Cloud to Color(0xFFFF7700)
         audio -> Icons.Filled.MusicNote to Accent
@@ -475,7 +475,7 @@ private fun JobRow(j: Job, compact: Boolean = false) {
 @Composable
 private fun RoundBtn(icon: ImageVector, desc: String, onClick: () -> Unit) {
     Box(Modifier.size(44.dp).clip(CircleShape).background(Surf2).pressable(onClick = onClick), contentAlignment = Alignment.Center) {
-        Icon(icon, desc, tint = Color.White)
+        Icon(icon, desc, tint = Ink)
     }
 }
 

@@ -77,7 +77,7 @@ class BrowserActivity : ComponentActivity() {
 
 private val QUICK_SITES = listOf(
     Triple("YouTube", "https://m.youtube.com", Color(0xFFFF3B30)), Triple("Instagram", "https://www.instagram.com", Color(0xFFE1306C)),
-    Triple("TikTok", "https://www.tiktok.com", Color(0xFF25F4EE)), Triple("X", "https://x.com", Color(0xFFDDDDDD)),
+    Triple("TikTok", "https://www.tiktok.com", Color(0xFF25F4EE)), Triple("X", "https://x.com", Color(0xFF8E8E93)),
     Triple("Facebook", "https://m.facebook.com", Color(0xFF1877F2)), Triple("Vimeo", "https://vimeo.com", Color(0xFF1AB7EA)),
     Triple("Dailymotion", "https://www.dailymotion.com", Color(0xFF00AAFF)), Triple("Reddit", "https://www.reddit.com", Color(0xFFFF4500)),
     Triple("SoundCloud", "https://m.soundcloud.com", Color(0xFFFF7700)), Triple("Google", "https://www.google.com", Color(0xFF4285F4))

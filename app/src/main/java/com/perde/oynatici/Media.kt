@@ -93,7 +93,7 @@ object Library {
                     )
                 }
             }
-        } catch (_: Exception) { }
+        } catch (e: Exception) { Report.err("video taraması", e) }
         cache = out
         return out
     }
@@ -204,7 +204,7 @@ object Library {
                 ok++
                 Subs.siblings(src).forEach { s ->
                     val sd = File(destDir, dest.nameWithoutExtension + s.name.substring(src.nameWithoutExtension.length))
-                    if (copy) try { s.copyTo(sd) } catch (_: Exception) { } else moveFile(s, sd)
+                    if (copy) try { s.copyTo(sd) } catch (e: Exception) { Report.err("altyazı kopyalama", e) } else moveFile(s, sd)
                 }
                 if (!copy) { Prefs.moveKey(p, dest.path); scanList += p }
                 scanList += dest.path

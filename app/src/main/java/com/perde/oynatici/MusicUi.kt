@@ -407,7 +407,7 @@ fun MiniPlayer(open: () -> Unit) {
             }
             IconButton(onClick = { Engine.player?.seekToNextMediaItem() }) { Icon(Icons.Filled.SkipNext, "Sonraki") }
         }
-        Box(Modifier.fillMaxWidth().height(3.dp).background(Color(0x22FFFFFF))) { Box(Modifier.fillMaxWidth(progress.coerceIn(0f, 1f)).fillMaxHeight().background(Accent)) }
+        Box(Modifier.fillMaxWidth().height(3.dp).background(Ink.copy(alpha = 0.13f))) { Box(Modifier.fillMaxWidth(progress.coerceIn(0f, 1f)).fillMaxHeight().background(Accent)) }
     }
 }
 

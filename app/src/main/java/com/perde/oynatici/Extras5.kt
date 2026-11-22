@@ -101,7 +101,7 @@ object ListenLog {
         try {
             val a = JSONArray(file?.takeIf { it.exists() }?.readText() ?: return)
             for (i in 0 until a.length()) { val o = a.getJSONArray(i); cache += Listen(o.getString(0), o.getString(1), o.getString(2), o.getLong(3), o.optBoolean(4)) }
-        } catch (_: Exception) { }
+        } catch (e: Exception) { file?.keepBroken("dinleme geçmişi okuma", e) }
     }
 
     @Synchronized fun add(key: String, md: MediaMetadata?) {
@@ -114,10 +114,11 @@ object ListenLog {
         ver++
     }
 
-    private fun save(l: List<Listen>) = try {
+    // aynı anda iki kayıt iş parçacığı dosyayı karıştırmasın
+    @Synchronized private fun save(l: List<Listen>) = try {
         val a = JSONArray(); l.forEach { a.put(JSONArray().put(it.key).put(it.title).put(it.artist).put(it.at).put(it.video)) }
-        file?.writeText(a.toString())
-    } catch (_: Exception) { }
+        file?.writeSafe(a.toString())
+    } catch (e: Exception) { Report.err("dinleme geçmişi kaydı", e) }
 
     @Synchronized fun all(): List<Listen> = ArrayList(cache)
     @Synchronized fun clear() { cache.clear(); file?.delete(); ver++ }

@@ -53,7 +53,10 @@ object Report {
     }
 
     @Synchronized
-    fun log(tag: String, msg: String) {
+    /** Yutulan hatayı rapora yazar (ne olduğu sonradan görülebilsin). */
+    fun err(tag: String, e: Throwable) = log(tag, "${e.javaClass.simpleName}: ${e.message ?: ""}")
+
+    @Synchronized fun log(tag: String, msg: String) {
         val d = dir ?: return
         try {
             val f = File(d, "olaylar.txt")
@@ -123,4 +126,20 @@ fun CrashDialog() {
         text = { Text("Nedenini bulabilmem için raporu kopyalayıp bana gönderebilirsin.") },
         confirmButton = { TextButton(onClick = { Report.copy(ctx); toast(ctx, "Rapor kopyalandı"); show = false; Report.markSeen() }) { Text("Raporu kopyala") } },
         dismissButton = { TextButton(onClick = { show = false; Report.markSeen() }) { Text("Kapat") } })
+}
+
+/**
+ * Dosyayı önce geçici dosyaya yazıp sonra yerine koyar: yazma yarıda kesilirse (uygulama kapanır, pil biter)
+ * eski dosya sağlam kalır. Eskiden yarım yazılan dosya bir sonraki açılışta okunamıyor ve geçmiş sıfırlanıyordu.
+ */
+fun File.writeSafe(text: String) {
+    val tmp = File(parentFile, "$name.tmp")
+    tmp.writeText(text)
+    if (!tmp.renameTo(this)) { delete(); if (!tmp.renameTo(this)) { writeText(text); tmp.delete() } }
+}
+
+/** Bozuk dosyayı silmeden kenara alır (okunamadıysa üzerine yazılıp kaybolmasın). */
+fun File.keepBroken(tag: String, e: Throwable) {
+    Report.err(tag, e)
+    try { if (exists()) copyTo(File(parentFile, "$name.bozuk"), overwrite = true) } catch (_: Exception) { }
 }

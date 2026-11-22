@@ -60,7 +60,7 @@ object Music {
                     )
                 }
             }
-        } catch (_: Exception) { }
+        } catch (e: Exception) { Report.err("müzik taraması", e) }
         cache = out.sortedWith(compareBy(NaturalOrder) { it.title })
         return cache
     }

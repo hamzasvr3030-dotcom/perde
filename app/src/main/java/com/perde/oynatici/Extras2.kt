@@ -144,7 +144,7 @@ object MetaNet {
     private fun save(ctx: Context, key: String, m: MediaMeta?) {
         val o = if (m == null) JSONObject().put("none", true) else JSONObject().put("k", m.kind).put("t", m.title).put("y", m.year ?: "")
             .put("s", m.summary).put("p", m.poster ?: "").put("g", m.genres ?: "").put("r", m.rating ?: "").put("e", m.episode ?: "")
-        file(ctx, key).writeText(o.toString())
+        file(ctx, key).writeSafe(o.toString())
     }
 
     fun forget(ctx: Context, key: String) { file(ctx, key).delete(); posterFile(ctx, key).delete() }

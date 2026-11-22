@@ -237,7 +237,7 @@ fun ForYouPage(vm: LibVM, go: (Route) -> Unit) {
     LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(24.dp))
-                .background(Brush.linearGradient(listOf(lerp(Accent, Color.Black, 0.55f), Surf))).padding(18.dp)) {
+                .background(Brush.linearGradient(listOf(AccentDeep, Surf))).padding(18.dp)) {
                 Text("BU HAFTA", fontSize = 11.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold, color = AccentSoft)
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
                     Text(fmtDur(weekMs), fontSize = 30.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
@@ -293,10 +293,10 @@ fun ForYouPage(vm: LibVM, go: (Route) -> Unit) {
             Row(Modifier.padding(16.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Brush.linearGradient(listOf(Accent, Color(0xFF5B2A86))))
                 .clickable { go(Route.SummaryR) }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("KADRAJ ÖZET", fontSize = 11.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold)
-                    Text("Bu ayın özetini gör", fontSize = 18.sp, fontWeight = FontWeight.Black)
+                    Text("KADRAJ ÖZET", fontSize = 11.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.8f))
+                    Text("Bu ayın özetini gör", fontSize = 18.sp, fontWeight = FontWeight.Black, color = Color.White)
                 }
-                Icon(Icons.Filled.ChevronRight, null)
+                Icon(Icons.Filled.ChevronRight, null, tint = Color.White)
             }
         }
     }

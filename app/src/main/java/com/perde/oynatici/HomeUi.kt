@@ -61,19 +61,20 @@ val TR: Locale = Locale.forLanguageTag("tr")
 // ---------------- ortak ----------------
 @Composable
 fun Page(title: String, back: (() -> Unit)?, actions: @Composable RowScope.() -> Unit = {}, fab: @Composable () -> Unit = {}, content: @Composable () -> Unit) {
-    val sb = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
+    // Başlık ve işlem düğmeleri tek satırda (Videolar sayfasıyla aynı); eskiden başlığın üstünde boş bir şerit kalıyordu
     Scaffold(
-        modifier = Modifier.background(BgBrush).nestedScroll(sb.nestedScrollConnection),
+        modifier = Modifier.background(BgBrush),
         containerColor = Color.Transparent, contentWindowInsets = WindowInsets(0, 0, 0, 0), floatingActionButton = fab,
         topBar = {
             val st = ThemeState.style
-            LargeTopAppBar(
-                title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight(st.titleWeight),
-                    fontSize = if (st.titleSize > 0) st.titleSize.sp else androidx.compose.ui.unit.TextUnit.Unspecified) },
-                navigationIcon = { if (back != null) IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Geri") } },
-                actions = { ActionPill(actions) }, scrollBehavior = sb,
-                colors = TopAppBarDefaults.largeTopAppBarColors(containerColor = Color.Transparent, scrolledContainerColor = Surf)
-            )
+            Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars)
+                .padding(start = if (back != null) 4.dp else 18.dp, top = 10.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (back != null) IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Geri") }
+                Text(title, Modifier.weight(1f).padding(start = if (back != null) 4.dp else 0.dp), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight(st.titleWeight), letterSpacing = (-0.5).sp,
+                    fontSize = if (back != null) 26.sp else (st.titleSize.takeIf { it > 0 } ?: 34).sp)
+                ActionPill(actions)
+            }
         }
     ) { pad -> Box(Modifier.padding(pad).fillMaxSize()) { content() } }
 }

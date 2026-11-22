@@ -85,7 +85,7 @@ fun MoreScreen(vm: LibVM, go: (Route) -> Unit) {
             when {
                 r == null -> toast(ctx, Updater.lastError ?: "Sunucuya ulaşılamadı")
                 Updater.newer(r.version, Updater.current(ctx)) -> AppState.update = r
-                else -> toast(ctx, "En güncel sürümü kullanıyorsun (${r.version})")
+                else -> toast(ctx, "En güncel sürümü kullanıyorsun (${Updater.current(ctx)})")
             }
         }
     }
@@ -268,7 +268,7 @@ fun SettingsPage(vm: LibVM, section: Int, back: () -> Unit) {
                                     val r = Updater.check()
                                     when { r == null -> toast(ctx, Updater.lastError ?: "Sunucuya ulaşılamadı")
                                         Updater.newer(r.version, Updater.current(ctx)) -> AppState.update = r
-                                        else -> toast(ctx, "En güncel sürümü kullanıyorsun (${r.version})") }
+                                        else -> toast(ctx, "En güncel sürümü kullanıyorsun (${Updater.current(ctx)})") }
                                 }
                             }
                             GroupRow(Icons.Filled.History, "İzleme geçmişini temizle", "Kaldığı yer bilgileri sıfırlanır") {

@@ -2,6 +2,8 @@
 
 package com.perde.oynatici
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -71,10 +73,10 @@ fun StorageScreen(vm: LibVM, back: () -> Unit, go: (Route) -> Unit = {}) {
                         }
                     }
                 }
-                Row(Modifier.padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { go(Route.CleanupR) }) { Text("Yer aç") }
-                    FilledTonalButton(onClick = { scope.launch(Dispatchers.IO) { StorageScan.clearCache(ctx) }.invokeOnCompletion { ver++ }; toast(ctx, "Önbellek temizlendi") }) { Text("Önbelleği temizle") }
-                    if (i.trash > 0) FilledTonalButton(onClick = { scope.launch(Dispatchers.IO) { Trash.list(ctx).forEach { Trash.deleteForever(it) } }.invokeOnCompletion { ver++ }; toast(ctx, "Çöp boşaltıldı") }) { Text("Çöpü boşalt") }
+                Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { go(Route.CleanupR) }) { Text("Yer aç", maxLines = 1) }
+                    FilledTonalButton(onClick = { scope.launch(Dispatchers.IO) { StorageScan.clearCache(ctx) }.invokeOnCompletion { ver++ }; toast(ctx, "Önbellek temizlendi") }) { Text("Önbelleği temizle", maxLines = 1) }
+                    if (i.trash > 0) FilledTonalButton(onClick = { scope.launch(Dispatchers.IO) { Trash.list(ctx).forEach { Trash.deleteForever(it) } }.invokeOnCompletion { ver++ }; toast(ctx, "Çöp boşaltıldı") }) { Text("Çöpü boşalt", maxLines = 1) }
                 }
             }
             item { Text("En çok yer kaplayan klasörler", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp, bottom = 6.dp)) }

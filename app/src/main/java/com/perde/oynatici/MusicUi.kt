@@ -56,6 +56,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -621,7 +622,11 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
         }
 
         NextCard(p) { sheet = NpSheet.QUEUE }
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // sütunun 22dp kenar boşluğunu aşıp ekran kenarına kadar uzanır: son düğme kenar boşluğunda sertçe kesilmez
+        Row(Modifier.fillMaxWidth().layout { m, c ->
+                val ex = 44.dp.roundToPx(); val pl = m.measure(c.copy(minWidth = c.maxWidth + ex, maxWidth = c.maxWidth + ex))
+                layout(c.maxWidth, pl.height) { pl.place(-ex / 2, 0) }
+            }.horizontalScroll(rememberScrollState()).padding(start = 22.dp, end = 22.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             NpTool(Icons.Filled.Lyrics, "Sözler", npView == 1) { npView = if (npView == 1) 0 else 1 }
             NpTool(Icons.Filled.GraphicEq, "Dalga", npView == 2) { npView = if (npView == 2) 0 else 2 }
             NpTool(Icons.AutoMirrored.Filled.QueueMusic, "Sıra", false) { sheet = NpSheet.QUEUE }

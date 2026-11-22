@@ -58,6 +58,19 @@ fun resLabel(w: Int, h: Int): String {
     }
 }
 /** "Dizi.Adi.S01E02.1080p.WEB-DL.x264" → "Dizi Adi S01E02" */
+/**
+ * Listede gösterilecek ad: uzantı ve indirirken eklenen YouTube kimliği ("[F_tecrPV99s]", "(_gqovWYlSvOU_)") atılır,
+ * boşluksuz alt çizgili adlarda alt çizgi boşluk olur. Dosyanın kendisi değişmez.
+ */
+fun shownTitle(name: String): String {
+    var s = name
+    val ext = s.substringAfterLast('.', "")
+    if (ext.length in 2..4 && ext.all { it.isLetterOrDigit() }) s = s.substringBeforeLast('.')
+    s = s.replace(Regex("""\s*(\[[A-Za-z0-9_-]{11}]|\(_[A-Za-z0-9_-]{11}_\))\s*$"""), "")
+    if (' ' !in s) s = s.replace('_', ' ')
+    return s.trim().ifEmpty { name }
+}
+
 fun cleanTitle(name: String): String {
     var s = name.substringBeforeLast('.').replace(Regex("[\\[(].*?[\\])]"), " ").replace('.', ' ').replace('_', ' ')
     s = s.replace(Regex("(?i)\\b(2160p|1080p|720p|480p|x264|x265|h264|h265|hevc|web-?dl|webrip|bluray|brrip|hdrip|dvdrip|aac|ac3|dts|yify|rarbg)\\b.*"), "")
@@ -88,7 +101,7 @@ object Library {
                     val id = c.getLong(0)
                     val f = File(path)
                     out += Video(
-                        id, ContentUris.withAppendedId(base, id), path, c.getString(2) ?: f.name,
+                        id, ContentUris.withAppendedId(base, id), path, shownTitle(c.getString(2) ?: f.name),
                         f.parent ?: "/", c.getLong(3), c.getLong(4), c.getInt(5), c.getInt(6), c.getLong(7), c.getString(8)
                     )
                 }
@@ -293,12 +306,12 @@ object Library {
 
     fun hiddenList(path: String): List<Video> =
         (File(path).listFiles() ?: emptyArray()).filter { it.isFile && (isVideoName(it.name) || isAudioName(it.name)) }.map { f ->
-            Video(-1, Uri.fromFile(f), f.path, f.name, f.parent ?: "", probeDuration(f.path), f.length(), 0, 0, f.lastModified() / 1000, null)
+            Video(-1, Uri.fromFile(f), f.path, shownTitle(f.name), f.parent ?: "", probeDuration(f.path), f.length(), 0, 0, f.lastModified() / 1000, null)
         }.sortedWith(compareBy(NaturalOrder) { it.title })
 
     fun privateList(ctx: Context): List<Video> =
         (privateDir(ctx).listFiles() ?: emptyArray()).filter { it.isFile && (isVideoName(it.name) || isAudioName(it.name)) }.map { f ->
-            Video(-1, Uri.fromFile(f), f.path, f.name, f.parent ?: "", probeDuration(f.path), f.length(), 0, 0, f.lastModified() / 1000, null)
+            Video(-1, Uri.fromFile(f), f.path, shownTitle(f.name), f.parent ?: "", probeDuration(f.path), f.length(), 0, 0, f.lastModified() / 1000, null)
         }.sortedBy { it.title.lowercase() }
 
     fun probeDuration(path: String): Long = try {
@@ -319,7 +332,7 @@ object Library {
     }
 
     fun titleOf(ctx: Context, key: String): String =
-        byKey(key)?.title ?: Music.byKey(key)?.title ?: if (key.startsWith("/")) File(key).name else displayName(ctx, Uri.parse(key))
+        byKey(key)?.title ?: Music.byKey(key)?.title ?: if (key.startsWith("/")) shownTitle(File(key).name) else displayName(ctx, Uri.parse(key))
 }
 
 /** "Bölüm 2" < "Bölüm 10" sıralaması için doğal sıralama. */

@@ -473,17 +473,24 @@ object Dl {
         return { run.set(false) }
     }
 
-    private fun tmpDir(c: Context, j: Job) = File(c.cacheDir, "dl/${j.id}")
+    private fun tmpDir(c: Context, j: Job): File {
+        val base = j.dir.takeIf { it.isNotEmpty() }?.let { File(it, ".kadraj-tmp") }?.takeIf { (it.exists() || it.mkdirs()) && it.canWrite() } ?: File(c.cacheDir, "dl")
+        if (base.name == ".kadraj-tmp") File(base, ".nomedia").let { if (!it.exists()) try { it.createNewFile() } catch (_: Exception) { } }
+        return File(base, j.id)
+    }
     private fun sizeFile(c: Context, j: Job) = File(c.cacheDir, "dlsize_${j.id}.txt")
 
-    private fun build(c: Context, j: Job, subs: Boolean, pathFile: File): YoutubeDLRequest {
+    private fun build(c: Context, j: Job, subs: Boolean, pathFile: File, safe: Boolean = false): YoutubeDLRequest {
         val o = j.opts
         val local = j.url.startsWith("file:")
-        val info = if (!j.url.startsWith("ytsearch") && !local) Web.freshInfo(c, j.url) else null
+        val info = if (!safe && !j.url.startsWith("ytsearch") && !local) Web.freshInfo(c, j.url) else null
         val r = if (info != null) YoutubeDLRequest(emptyList<String>()).also { it.addOption("--load-info-json", info.absolutePath) } else YoutubeDLRequest(j.url)
         r.addOption("--no-playlist"); r.addOption("--no-mtime"); r.addOption("--newline"); r.addOption("--progress")
         r.addOption("--retries", "10"); r.addOption("--fragment-retries", "10"); r.addOption("--no-warnings")
-        if (DlPrefs.fast) {
+        if (safe) {
+            // 403 sonrası temkinli mod: daha az paralel bağlantı, YouTube'un engellemediği varsayılan parça düzeni
+            r.addOption("-N", "4")
+        } else if (DlPrefs.fast) {
             // YouTube dosyalarını küçük parçalara bölüp 16'sını aynı anda indir (yavaşlatmaya karşı en etkili yöntem)
             if (info == null && "youtu" in j.url) r.addOption("--extractor-args", "youtube:formats=dashy")
             r.addOption("-N", "16"); r.addOption("--http-chunk-size", "10M")
@@ -491,7 +498,7 @@ object Dl {
         listOf("", "1M", "2M", "5M").getOrElse(DlPrefs.rate) { "" }.takeIf { it.isNotEmpty() }?.let { r.addOption("-r", it) }
         if (local) r.addOption("--enable-file-urls")
         if (DlPrefs.archive && !local) r.addOption("--download-archive", archiveFile(c).absolutePath)
-        Web.addCookies(c, r)
+        if (safe) r.addOption("--cache-dir", File(c.filesDir, "ytdlp-cache").absolutePath) else Web.addCookies(c, r)
         r.addCommands(listOf("--print-to-file", "after_move:filepath", pathFile.absolutePath))
         r.addCommands(listOf("--print-to-file", "before_dl:%(filesize,filesize_approx)s", sizeFile(c, j).absolutePath))
         // geçici dosyalar ayrı klasörde: ilerleme diskte inen bayttan ölçülür
@@ -517,7 +524,6 @@ object Dl {
             val av1 = if (h > 1080) "" else "[vcodec!^=av01]"
             r.addOption("-f", "bv*[height<=$h][ext=mp4]$av1+ba[ext=m4a]/bv*[height<=$h]$av1+ba/b[height<=$h]/bv*+ba/b")
             r.addOption("--merge-output-format", "mp4")
-            if (o.meta) r.addOption("--embed-metadata")
             if (o.chapters) r.addOption("--embed-chapters")
             if (subs) { r.addOption("--write-subs"); r.addOption("--write-auto-subs"); r.addOption("--sub-langs", "tr,en"); r.addOption("--convert-subs", "srt") }
             if (o.sponsor) r.addOption("--sponsorblock-remove", "sponsor,selfpromo,interaction")
@@ -542,6 +548,7 @@ object Dl {
         }
         val pathFile = File(c.cacheDir, "dlpath_${j.id}.txt").apply { delete() }
         var subs = j.opts.subs && !j.opts.audio
+        var safe = false
         var attempt = 0
         while (true) {
             attempt++
@@ -549,7 +556,7 @@ object Dl {
             j.expected = 0; sizeFile(c, j).delete()
             val stopWatch = startDiskWatch(j, tmpDir(c, j), sizeFile(c, j))
             try {
-                val res = YoutubeDL.getInstance().execute(build(c, j, subs, pathFile), j.id) { p, _, line -> onProgress(j, p, line) }
+                val res = YoutubeDL.getInstance().execute(build(c, j, subs, pathFile, safe), j.id) { p, _, line -> onProgress(j, p, line) }
                 out = res.out + "\n" + res.err
             } catch (e: YoutubeDL.CanceledException) {
                 stopWatch(); j.state = if (j.pauseReq) Job.PAUSED else Job.CANCEL; j.pauseReq = false; return
@@ -572,6 +579,7 @@ object Dl {
                     Library.scan(c, path)
                     File(path).parentFile?.listFiles()?.filter { it.extension.lowercase() in setOf("jpg", "webp", "png") && it.nameWithoutExtension == File(path).nameWithoutExtension }?.forEach { it.delete() }
                     j.file = path; j.progress = 1f; j.state = Job.DONE; j.speed = ""; j.eta = ""
+                    try { tmpDir(c, j).deleteRecursively() } catch (_: Exception) { }
                     j.tEnd = System.currentTimeMillis()
                     val size = File(path).length().takeIf { it > 0 } ?: j.bytes
                     val prep = ((if (j.tFirst > 0) j.tFirst else j.tEnd) - j.tStart) / 1000
@@ -581,7 +589,14 @@ object Dl {
                     if (j.title.isBlank() || j.title.startsWith("http")) j.title = File(path).nameWithoutExtension
                     return
                 }
-                err != null && subs && "subtitle" in out.lowercase() && attempt < 3 -> { subs = false; continue }   // altyazı yüzünden düştüyse altyazısız dene
+                err != null && subs && "subtitle" in out.lowercase() && attempt < 3 -> { subs = false; continue }
+                // 403 "erişim reddedildi": analiz bilgisindeki adresler eskimiş/başka ağdan alınmış ya da çok fazla paralel bağlantı.
+                // Taze adresle, çerezsiz, daha az bağlantıyla ve güncel yt-dlp ile tekrar dene.
+                err != null && !safe && attempt < 4 && ("403" in out || "forbidden" in out.lowercase()) -> {
+                    safe = true; Web.infoFile(c, j.url).delete(); j.phase = "Erişim reddedildi, yeniden deneniyor…"
+                    Report.log("indirme", "${j.url} → 403, temkinli modda tekrar")
+                    Web.maybeUpdate(c, force = true); continue
+                }   // altyazı yüzünden düştüyse altyazısız dene
                 err != null && attempt < 3 && Web.freshInfo(c, j.url) != null && !Web.isNetworkError(out) -> { Web.infoFile(c, j.url).delete(); continue }   // eski analiz bilgisi: adresle tekrar
                 err != null -> {
                     j.netErr = Web.isNetworkError(out)

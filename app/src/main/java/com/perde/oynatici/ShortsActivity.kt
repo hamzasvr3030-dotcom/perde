@@ -3,6 +3,8 @@
 
 package com.perde.oynatici
 
+import kotlinx.coroutines.sync.withLock
+
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -124,11 +126,11 @@ private fun ShortsScreen(a: ShortsActivity) {
         a.player.stop()
         try {
             if (it.local) a.player.setMediaItem(MediaItem.fromUri(Uri.fromFile(File(it.key))))
-            else a.player.setMediaSource(webSource(a, Web.resolve(a, it.key), it.key))
+            else a.player.setMediaSource(webSource(a, ShortsGate.resolve(a, it.key), it.key))
             a.player.prepare(); a.player.playWhenReady = true; playing = true
         } catch (e: Exception) { err = Web.explain(e) }
         // sonraki iki videoyu önceden hazırla
-        items.drop(i + 1).take(2).filter { !it.local }.forEach { n -> launch { try { Web.resolve(a, n.key) } catch (_: Exception) { } } }
+        items.getOrNull(i + 1)?.takeIf { !it.local }?.let { n -> launch { try { ShortsGate.resolve(a, n.key) } catch (_: Exception) { } } }
     }
     LaunchedEffect(muted) { a.player.volume = if (muted) 0f else 1f }
 
@@ -201,5 +203,14 @@ private fun SideBtn(icon: androidx.compose.ui.graphics.vector.ImageVector, label
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClick = onClick)) {
         Box(Modifier.size(48.dp).clip(CircleShape).background(Color(0x55000000)), contentAlignment = Alignment.Center) { Icon(icon, label, tint = tint, modifier = Modifier.size(28.dp)) }
         Text(label, color = Color.White, fontSize = 11.sp)
+    }
+}
+
+/** YouTube aynı anda çok istek görünce 403 veriyor: çözümlemeler sırayla yapılır. */
+object ShortsGate {
+    private val lock = kotlinx.coroutines.sync.Mutex()
+    suspend fun resolve(ctx: android.content.Context, url: String): Web.Stream {
+        Web.cached(url)?.let { return it }
+        return lock.withLock { Web.cached(url) ?: Web.resolve(ctx, url) }
     }
 }

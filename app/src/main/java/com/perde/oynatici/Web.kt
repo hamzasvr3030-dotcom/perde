@@ -168,6 +168,14 @@ object Web {
         r.addOption("-J"); r.addOption("--no-warnings")
         val out = try { YoutubeDL.getInstance().execute(r).out } catch (e: Exception) {
             val low = (e.message ?: "").lowercase()
+            if ("403" in low) {
+                // eskimiş giriş çerezi veya eski yt-dlp: güncelle, çerezsiz tekrar dene
+                maybeUpdate(ctx, force = true)
+                val cmd = r.buildCommand()
+                val noCookies = cmd.filterIndexed { i, a -> a != "--cookies" && cmd.getOrNull(i - 1) != "--cookies" }
+                val r2 = YoutubeDLRequest(noCookies)   // komut olduğu gibi aktarılır (çerez seçeneği çıkarılmış)
+                return try { JSONObject(YoutubeDL.getInstance().execute(r2).out) } catch (_: Exception) { throw e }
+            }
             if ("unsupported url" in low || "private" in low || "unavailable" in low || isNetworkError(low)) throw e
             // eskimiş çözümleyici olabilir: bir kez güncelleyip tekrar dene
             maybeUpdate(ctx, force = true)

@@ -19,6 +19,7 @@ import android.os.Looper
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -85,6 +86,8 @@ class Job(
     var title by mutableStateOf(title)
     var state by mutableIntStateOf(Q)
     var progress by mutableFloatStateOf(0f)
+    /** İndirme önceliği: büyük olan önce iner ("Önce indir" / "En sona al"). */
+    var prio by mutableLongStateOf(0L)
     var phase by mutableStateOf("Sırada")
     var speed by mutableStateOf("")
     var eta by mutableStateOf("")
@@ -116,7 +119,7 @@ class Job(
 
     fun json(): JSONObject = JSONObject().put("id", id).put("u", url).put("t", title).put("th", thumb ?: "").put("o", opts.json())
         .put("g", group ?: "").put("i", index).put("d", dir).put("st", state).put("p", progress.toDouble()).put("f", file ?: "").put("e", error ?: "")
-        .put("at", at).put("fa", forceArtist ?: "").put("ft", forceTitle ?: "")
+        .put("at", at).put("fa", forceArtist ?: "").put("ft", forceTitle ?: "").put("pr", prio)
 }
 
 class DlGroup(val id: String, val title: String, val audio: Boolean, val playlistId: Long?, val total: Int) {
@@ -194,7 +197,7 @@ object Dl {
                     j.optString("fa").ifEmpty { null }, j.optString("ft").ifEmpty { null })
                 job.state = j.optInt("st").let { if (it == Job.RUN || it == Job.WAIT) Job.Q else it }
                 job.progress = j.optDouble("p").toFloat(); job.file = j.optString("f").ifEmpty { null }; job.error = j.optString("e").ifEmpty { null }
-                job.phase = phaseText(job)
+                job.phase = phaseText(job); job.prio = j.optLong("pr")
                 jobs += job
             }
         } catch (e: Exception) { if (e !is java.io.FileNotFoundException) qFile().keepBroken("kuyruk okuma", e) }
@@ -322,13 +325,26 @@ object Dl {
     val activeCount get() = jobs.count { it.active }
 
     /** Kuyruğu işletir: Wi-Fi kuralı ve aynı anda indirme sınırı. */
+    /** Bekleyenlerin iniş sırası: önce öncelik, sonra eklenme sırası (en eski önce). */
+    fun queueOrder(): List<Job> = jobs.reversed().filter { it.state == Job.Q || it.state == Job.WAIT || it.state == Job.PAUSED }.sortedByDescending { it.prio }
+
+    /** Sıradakilerin önüne geçirir; duraklatılmışsa sıraya geri alır. */
+    fun prioritize(j: Job) {
+        j.prio = (jobs.maxOfOrNull { it.prio } ?: 0L) + 1
+        if (j.state == Job.PAUSED) { j.state = Job.Q; j.phase = "Sırada" }
+        save(); pump()
+    }
+
+    /** Bekleyenlerin en sonuna atar. */
+    fun demote(j: Job) { j.prio = (jobs.minOfOrNull { it.prio } ?: 0L) - 1; save() }
+
     fun pump() {
         val c = app ?: return
         val waitWifi = DlPrefs.wifiOnly && !unmetered
         jobs.filter { it.state == Job.Q || it.state == Job.WAIT }.forEach { if (waitWifi) { it.state = Job.WAIT; it.phase = "Wi-Fi bekleniyor" } else if (it.state == Job.WAIT) { it.state = Job.Q; it.phase = "Sırada" } }
         if (!waitWifi) {
             var running = jobs.count { it.state == Job.RUN }
-            for (j in jobs.reversed()) {
+            for (j in queueOrder()) {
                 if (running >= DlPrefs.parallel.coerceIn(1, 6)) break
                 if (j.state != Job.Q) continue
                 j.state = Job.RUN; j.phase = "Bağlanıyor…"; j.progress = 0f; j.exactSeen = false; j.fileIdx = 0; j.lastRaw = 0f; j.pauseReq = false

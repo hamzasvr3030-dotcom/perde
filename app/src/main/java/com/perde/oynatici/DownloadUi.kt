@@ -448,6 +448,7 @@ private fun JobRow(j: Job, compact: Boolean = false) {
                 Job.RUN -> listOf(Web.site(j.url), j.phase).filter { it.isNotEmpty() }.joinToString(" · ")
                 Job.ERR -> j.error ?: "Hata"
                 Job.DONE -> "İndirildi · ${j.opts.label}" + (j.file?.let { " · " + fmtSize(File(it).length()) } ?: "") + (if (j.timing.isNotEmpty()) "\n" + j.timing else "")
+                Job.Q -> Dl.queueOrder().indexOf(j).takeIf { it >= 0 }?.let { "Sırada · ${it + 1}." } ?: j.phase
                 else -> j.phase
             }
             Text(sub, color = when (j.state) { Job.ERR -> BAD; Job.DONE, Job.SKIP -> OK; else -> Muted }, fontSize = 12.sp, maxLines = 2)
@@ -486,6 +487,10 @@ private fun JobMenu(j: Job) {
         IconButton(onClick = { open = true }) { Icon(Icons.Filled.MoreHoriz, "Diğer", tint = Muted) }
         DropdownMenu(open, { open = false }) {
             if (j.state == Job.PAUSED || j.state == Job.ERR) DropdownMenuItem({ Text("Devam et") }, { open = false; Dl.resume(j) }, leadingIcon = { Icon(Icons.Filled.PlayArrow, null) })
+            if (j.state == Job.Q || j.state == Job.WAIT || j.state == Job.PAUSED) {
+                DropdownMenuItem({ Text("Önce indir") }, { open = false; Dl.prioritize(j) }, leadingIcon = { Icon(Icons.Filled.VerticalAlignTop, null) })
+                DropdownMenuItem({ Text("En sona al") }, { open = false; Dl.demote(j) }, leadingIcon = { Icon(Icons.Filled.VerticalAlignBottom, null) })
+            }
             if (j.active) DropdownMenuItem({ Text("İptal et") }, { open = false; Dl.cancel(j) }, leadingIcon = { Icon(Icons.Filled.Close, null) })
             DropdownMenuItem({ Text("Listeden kaldır") }, { open = false; Dl.remove(j) }, leadingIcon = { Icon(Icons.Filled.Delete, null) })
         }

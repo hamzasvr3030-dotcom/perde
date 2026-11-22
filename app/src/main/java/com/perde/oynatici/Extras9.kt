@@ -118,6 +118,7 @@ fun DlSelBar(modifier: Modifier = Modifier) {
     SelBar(ids.size, Dl.jobs.size, { if (ids.size >= Dl.jobs.size) ids.clear() else { ids.clear(); ids.addAll(Dl.jobs.map { it.id }) } }, { ids.clear() }, modifier) {
         SelAction(Icons.Filled.Pause, "Duraklat") { sel().filter { it.active }.forEach { Dl.pause(it) }; ids.clear() }
         SelAction(Icons.Filled.PlayArrow, "Devam") { sel().forEach { Dl.resume(it) }; ids.clear() }
+        SelAction(Icons.Filled.VerticalAlignTop, "Önce indir") { sel().filter { it.state == Job.Q || it.state == Job.WAIT || it.state == Job.PAUSED }.reversed().forEach { Dl.prioritize(it) }; ids.clear() }
         SelAction(Icons.Filled.Close, "Kaldır", RED) { sel().forEach { Dl.remove(it) }; ids.clear() }
     }
 }

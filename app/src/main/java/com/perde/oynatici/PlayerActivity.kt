@@ -82,7 +82,7 @@ import java.io.File
 import java.util.Locale
 import com.google.android.gms.cast.MediaMetadata as CastMeta
 
-enum class Sheet { SUBS, AUDIO, SPEED, MORE, SLEEP, EQ, INFO, CLIP, CHAPTERS, BOOKMARKS, ONLINE, PLAYLIST, DOWNLOAD, META, INTRO }
+enum class Sheet { IMAGE, SUBS, AUDIO, SPEED, MORE, SLEEP, EQ, INFO, CLIP, CHAPTERS, BOOKMARKS, ONLINE, PLAYLIST, DOWNLOAD, META, INTRO }
 
 data class Ind(val kind: String, val text: String, val level: Float? = null)
 
@@ -678,6 +678,31 @@ class PlayerActivity : AppCompatActivity() {
     }
     fun toggleShuffle() { ui.shuffle = !ui.shuffle; Prefs.shuffle = ui.shuffle; Engine.setShuffle(ui.shuffle); updateNav(); itemChanged(); toast(if (ui.shuffle) "Karışık çalma açık" else "Karışık çalma kapalı") }
     fun toggleBg() { ui.bg = !ui.bg; Prefs.bgPlay = ui.bg; toast(if (ui.bg) "Arka planda oynatma açık" else "Arka planda oynatma kapalı") }
+    // ---- görüntü ayarları (parlaklık / kontrast / doygunluk), -100..100 ----
+    var fxB by mutableFloatStateOf(0f)
+    var fxC by mutableFloatStateOf(0f)
+    var fxS by mutableFloatStateOf(0f)
+    private var fxPipeline = false
+    val fxOn get() = fxB != 0f || fxC != 0f || fxS != 0f
+
+    fun applyFx() {
+        val list = ArrayList<androidx.media3.common.Effect>()
+        if (fxB != 0f) list += androidx.media3.effect.Brightness(fxB / 200f)
+        if (fxC != 0f) list += androidx.media3.effect.Contrast(fxC / 150f)
+        if (fxS != 0f) list += androidx.media3.effect.HslAdjustment.Builder().adjustSaturation(fxS).build()
+        try {
+            player.setVideoEffects(list)
+            // Efekt hattı video başlarken kurulur: ilk açılışta bulunduğu yerden bir kez yeniden hazırlanır
+            if (list.isNotEmpty() && !fxPipeline) {
+                fxPipeline = true
+                val pos = player.currentPosition; val pw = player.playWhenReady
+                player.stop(); player.prepare(); player.seekTo(pos); player.playWhenReady = pw
+            }
+        } catch (e: Throwable) { Report.err("görüntü ayarı", e); toast("Görüntü ayarı bu videoda uygulanamadı") }
+    }
+
+    fun resetFx() { fxB = 0f; fxC = 0f; fxS = 0f; applyFx() }
+
     fun toggleNight() { ui.night = !ui.night; Engine.setNight(ui.night); toast(if (ui.night) "Gece modu açık: yüksek sesler kısılır, diyaloglar yükselir" else "Gece modu kapalı") }
     fun toggleFav() { val k = curKey() ?: return; ui.fav = Favs.toggle(k); toast(if (ui.fav) "Favorilere eklendi" else "Favorilerden çıkarıldı") }
 
@@ -1084,6 +1109,7 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        if (fxOn || fxPipeline) try { player.setVideoEffects(emptyList()) } catch (_: Throwable) { }   // ortak oynatıcı: sonraki videoya taşınmasın
         if (Engine.player === player) player.removeListener(listener)
         // başka yoldan kapandıysa (PiP kapatma, video bitimi) müziği geri getir; arka planda ses olarak sürüyorsa dokunma
         if (isFinishing && Engine.hasMusicSnap && !Engine.audioOnly && !ui.casting) Engine.restoreMusic(applicationContext)

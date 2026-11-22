@@ -11,8 +11,8 @@ android {
         applicationId = "com.perde.oynatici"
         minSdk = 26
         targetSdk = 36
-        versionCode = 30
-        versionName = "1.9.4"
+        versionCode = 31
+        versionName = "1.9.5"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
@@ -66,6 +66,7 @@ dependencies {
     implementation("androidx.media3:media3-ui:$media3")
     implementation("androidx.media3:media3-session:$media3")
     implementation("androidx.media3:media3-transformer:$media3")
+    implementation("androidx.media3:media3-effect:$media3")   // oynatıcıda görüntü ayarları
     implementation("org.jellyfin.media3:media3-ffmpeg-decoder:1.9.0+1")
 
     implementation("io.coil-kt.coil3:coil-compose:3.2.0")

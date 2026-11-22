@@ -64,8 +64,8 @@ data class UiStyle(
     companion object {
         val ALL = listOf(
             UiStyle("Mavi Gece", "Koyu, mavi vurgu, kalın başlıklar", true, 0xFF07080B, 0xFF16181E, 0xFF23262E, 0xFFECECEF, 0xFFB4B7C0, 0xFF3E8BFF, play = PlayLook()),
-            UiStyle("Cam", "Mor geçişli zemin, pembe vurgu, yüzen alt çubuk", true, 0xFF140B22, 0xFF2A1C40, 0xFF3A2A55, 0xFFF6F0FF, 0xFFC9B8E0, 0xFFF472B6,
-                grad = listOf(0xFF3B1466, 0xFF1A0B2A, 0xFF0B1E33), radius = 26, floatNav = true, play = PlayLook(art = 1, bg = 1, btn = 4, seek = 3, center = true)),
+            UiStyle("Cam", "Mavi geçişli zemin, turkuaz vurgu, yüzen alt çubuk", true, 0xFF08131F, 0xFF12263A, 0xFF1B3550, 0xFFEEF8FF, 0xFFA9C4D9, 0xFF2DD4BF,
+                grad = listOf(0xFF123C70, 0xFF0A1A30, 0xFF06343A), radius = 26, floatNav = true, play = PlayLook(art = 1, bg = 1, btn = 4, seek = 3, center = true)),
             UiStyle("Siyah Sade", "Saf siyah, köşeli, ince başlık, turuncu", true, 0xFF000000, 0xFF0C0C0C, 0xFF181818, 0xFFEAEAEA, 0xFF8A8A8A, 0xFFFF7A1A,
                 radius = 6, titleWeight = 300, titleSize = 40, play = PlayLook(art = 2, bg = 2, btn = 2, seek = 2, glass = false)),
             UiStyle("Açık Pastel", "Beyaz zemin, yumuşak renkler", false, 0xFFF4F5FB, 0xFFFFFFFF, 0xFFE9EAF4, 0xFF1D1F2B, 0xFF6E7389, 0xFF5B5BD6,

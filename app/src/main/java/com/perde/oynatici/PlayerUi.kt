@@ -594,6 +594,7 @@ private fun PlayerSheet(a: PlayerActivity, s: Sheet) {
     ModalBottomSheet(onDismissRequest = { ui.sheet = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = Surf) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
             when (s) {
+                Sheet.IMAGE -> ImageSheet(a)
                 Sheet.SUBS -> SubsSheet(a)
                 Sheet.AUDIO -> AudioSheet(a)
                 Sheet.SPEED -> SpeedSheet(a)
@@ -776,6 +777,7 @@ private fun MoreSheet(a: PlayerActivity) {
         if (a.folderOf(ui.key) != null) Tile(Icons.Filled.FastForward, "Girişi atla (klasör)", a.introOf(ui.key) != null) { ui.sheet = Sheet.INTRO }
         Tile(Icons.Filled.Loop, when { ui.abA < 0 -> "A-B tekrar"; ui.abB < 0 -> "B noktasını işaretle"; else -> "A-B'yi kapat" }, ui.abA >= 0) { a.abStep() }
         Tile(Icons.Filled.Bedtime, if (ui.sleepLabel.isEmpty()) "Uyku zamanlayıcısı" else "Uyku: ${ui.sleepLabel}", ui.sleepLabel.isNotEmpty()) { ui.sheet = Sheet.SLEEP }
+        Tile(Icons.Filled.Tune, "Görüntü ayarları", a.fxOn) { ui.sheet = Sheet.IMAGE }
         Tile(Icons.Filled.NightsStay, "Gece modu", ui.night) { a.toggleNight() }
         Tile(Icons.Filled.Equalizer, "Ekolayzer", Prefs.eqOn) { ui.sheet = Sheet.EQ }
         Tile(Icons.Filled.Headphones, "Sadece ses (müzik gibi)") { ui.sheet = null; a.audioOnly() }
@@ -790,6 +792,27 @@ private fun MoreSheet(a: PlayerActivity) {
         Tile(Icons.Filled.Memory, if (decSw) "Çözücü: yazılım" else "Çözücü: donanım", decSw) {
             decSw = !decSw; Prefs.decoderSw = decSw; a.toast("Çözücü ayarı oynatıcı yeniden açılınca geçerli olur")
         }
+    }
+}
+
+@Composable
+private fun ImageSheet(a: PlayerActivity) {
+    SheetTitle("Görüntü ayarları")
+    @Composable fun Row1(label: String, v: Float, set: (Float) -> Unit) {
+        Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Text(if (v == 0f) "0" else (if (v > 0) "+" else "") + v.toInt(), color = if (v == 0f) Muted else Accent, fontWeight = FontWeight.Bold)
+        }
+        // kaydırırken anında değişir; 0 civarına bırakınca tam 0'a oturur
+        Slider(v, { set(if (kotlin.math.abs(it) < 4f) 0f else Math.round(it).toFloat()); a.applyFx() }, valueRange = -100f..100f)
+    }
+    Row1("Parlaklık", a.fxB) { a.fxB = it }
+    Row1("Kontrast", a.fxC) { a.fxC = it }
+    Row1("Doygunluk (renk canlılığı)", a.fxS) { a.fxS = it }
+    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("Bu video kapanınca sıfırlanır. Karanlık çekilmiş videolarda parlaklık ve kontrastı biraz artırmak işe yarar.",
+            fontSize = 13.sp, color = Muted, modifier = Modifier.weight(1f))
+        TextButton(onClick = { a.resetFx() }, enabled = a.fxOn) { Text("Sıfırla") }
     }
 }
 

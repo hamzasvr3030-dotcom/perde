@@ -290,7 +290,7 @@ fun ForYouPage(vm: LibVM, go: (Route) -> Unit) {
             }
         }
         item {
-            Row(Modifier.padding(16.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Brush.linearGradient(listOf(Accent, Color(0xFF5B2A86))))
+            Row(Modifier.padding(16.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Brush.linearGradient(listOf(Accent, androidx.compose.ui.graphics.lerp(Accent, Color.Black, 0.55f))))
                 .clickable { go(Route.SummaryR) }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("KADRAJ ÖZET", fontSize = 11.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.8f))
@@ -337,7 +337,7 @@ fun SummaryScreen(vm: LibVM, back: () -> Unit) {
     val dlSize = remember(dls) { dls.sumOf { h -> h.file?.let { File(it).length() } ?: 0L } }
     val head = when { music > 0 -> "${ago.let { if (it == 0) "Bu ay" else "O ay" }} ${music / 3_600_000} saat\nmüzik dinledin."; total > 0 -> "Bu ay ${fmtDur(total)}\nKadraj'daydın."; else -> "Henüz yeterli\nveri yok." }
     androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides Color.White) {
-    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Accent, Color(0xFF5B2A86), Color(0xFF0B0B0E))))) {
+    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Accent, androidx.compose.ui.graphics.lerp(Accent, Color.Black, 0.6f), Color(0xFF0B0B0E))))) {
         LazyColumn(Modifier.windowInsetsPadding(WindowInsets.statusBars), contentPadding = PaddingValues(start = 22.dp, end = 22.dp, bottom = 30.dp)) {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {

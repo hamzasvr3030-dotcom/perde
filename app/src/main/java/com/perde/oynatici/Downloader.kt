@@ -171,6 +171,15 @@ object Dl {
     private fun hFile() = File(app!!.filesDir, "dl_history.json")
     fun archiveFile(ctx: Context) = File(ctx.filesDir, "dl_archive.txt")
 
+    /** İndirme arşivinden bu videonun satırını siler ("youtube <kimlik>"); dosyası silinen video tekrar indirilebilsin. */
+    @Synchronized fun forgetArchived(ctx: Context, url: String): Unit = try {
+        val f = archiveFile(ctx); val id = Web.idOf(url)
+        if (f.exists() && id.length in 6..64 && '/' !in id) {
+            val keep = f.readLines().filterNot { it.trim().endsWith(" $id") }
+            f.writeSafe(keep.joinToString("\n", postfix = if (keep.isEmpty()) "" else "\n"))
+        } else Unit
+    } catch (e: Exception) { Report.err("arşiv temizleme", e) }
+
     private fun load() {
         try {
             val o = JSONObject(qFile().readText())
@@ -506,7 +515,7 @@ object Dl {
     }
     private fun sizeFile(c: Context, j: Job) = File(c.cacheDir, "dlsize_${j.id}.txt")
 
-    private fun build(c: Context, j: Job, subs: Boolean, pathFile: File, safe: Boolean = false, onePass: Boolean = DlPrefs.onePass): YoutubeDLRequest {
+    private fun build(c: Context, j: Job, subs: Boolean, pathFile: File, safe: Boolean = false, onePass: Boolean = DlPrefs.onePass, useArchive: Boolean = true): YoutubeDLRequest {
         val o = j.opts
         val local = j.url.startsWith("file:")
         val info = if (!safe && !j.url.startsWith("ytsearch") && !local) Web.freshInfo(c, j.url) else null
@@ -523,7 +532,7 @@ object Dl {
         }
         listOf("", "1M", "2M", "5M").getOrElse(DlPrefs.rate) { "" }.takeIf { it.isNotEmpty() }?.let { r.addOption("-r", it) }
         if (local) r.addOption("--enable-file-urls")
-        if (DlPrefs.archive && !local) r.addOption("--download-archive", archiveFile(c).absolutePath)
+        if (useArchive && DlPrefs.archive && !local) r.addOption("--download-archive", archiveFile(c).absolutePath)
         if (safe) r.addOption("--cache-dir", File(c.filesDir, "ytdlp-cache").absolutePath) else Web.addCookies(c, r)
         r.addCommands(listOf("--print-to-file", "after_move:filepath", pathFile.absolutePath))
         // görüntü ve ses boyutu ayrı ayrı (birleşik "filesize" bazen sadece sesin boyutunu veriyordu)
@@ -592,6 +601,7 @@ object Dl {
         var subs = j.opts.subs && !j.opts.audio
         var safe = false
         var onePass = DlPrefs.onePass
+        var useArchive = true
         var attempt = 0
         while (true) {
             attempt++
@@ -599,7 +609,7 @@ object Dl {
             j.expected = 0; sizeFile(c, j).delete()
             val stopWatch = startDiskWatch(j, tmpDir(c, j), sizeFile(c, j))
             try {
-                val res = YoutubeDL.getInstance().execute(build(c, j, subs, pathFile, safe, onePass), j.id) { p, _, line -> onProgress(j, p, line) }
+                val res = YoutubeDL.getInstance().execute(build(c, j, subs, pathFile, safe, onePass, useArchive), j.id) { p, _, line -> onProgress(j, p, line) }
                 out = res.out + "\n" + res.err
             } catch (e: YoutubeDL.CanceledException) {
                 stopWatch(); j.state = if (j.pauseReq) Job.PAUSED else Job.CANCEL; j.pauseReq = false; return
@@ -613,8 +623,14 @@ object Dl {
 
             when {
                 "has already been recorded in the archive" in out -> {
-                    j.state = Job.SKIP; j.progress = 1f
-                    j.file = history.firstOrNull { it.key == Web.idOf(j.url) && it.file != null && File(it.file).exists() }?.file
+                    val have = existing(j.url)
+                    if (have == null && useArchive && attempt < 5) {
+                        // Arşivde kayıtlı ama dosya silinmiş: kaydı arşivden çıkar ve yeniden indir
+                        forgetArchived(c, j.url); useArchive = false
+                        j.phase = "Daha önce silinmiş, yeniden indiriliyor…"
+                        Report.log("indirme", "${j.url} → arşivde vardı ama dosya yok, yeniden indiriliyor"); continue
+                    }
+                    j.state = Job.SKIP; j.progress = 1f; j.file = have
                     return
                 }
                 path != null -> {

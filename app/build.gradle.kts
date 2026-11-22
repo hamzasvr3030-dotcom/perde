@@ -11,8 +11,8 @@ android {
         applicationId = "com.perde.oynatici"
         minSdk = 26
         targetSdk = 36
-        versionCode = 29
-        versionName = "1.9.3"
+        versionCode = 30
+        versionName = "1.9.4"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 

@@ -465,7 +465,7 @@ private fun JobRow(j: Job, compact: Boolean = false) {
             Job.RUN, Job.Q, Job.WAIT -> { RoundBtn(Icons.Filled.Pause, "Duraklat") { Dl.pause(j) }; JobMenu(j) }
             Job.PAUSED -> { RoundBtn(Icons.Filled.PlayArrow, "Devam") { Dl.resume(j) }; JobMenu(j) }
             Job.ERR, Job.CANCEL -> { IconButton(onClick = { Dl.resume(j) }) { Icon(Icons.Filled.Refresh, "Tekrar dene", tint = Accent) }; if (!compact) IconButton(onClick = { Dl.remove(j) }) { Icon(Icons.Filled.Delete, "Kaldır", tint = Muted) } }
-            Job.DONE -> j.file?.let { f -> Text(if (isAudioName(f)) "Çal" else "İzle", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp,
+            Job.DONE, Job.SKIP -> j.file?.let { f -> Text(if (isAudioName(f)) "Çal" else "İzle", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp,
                 modifier = Modifier.clip(CircleShape).background(Accent).clickable { playKeys(ctx, listOf(f)) }.padding(horizontal = 14.dp, vertical = 8.dp)) }
                 ?: Icon(Icons.Filled.CheckCircle, null, tint = OK, modifier = Modifier.padding(8.dp))
             else -> Icon(Icons.Filled.Done, null, tint = Muted, modifier = Modifier.padding(8.dp))

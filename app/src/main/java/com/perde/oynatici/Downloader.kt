@@ -398,7 +398,7 @@ object Dl {
         val id = Web.idOf(url)
         return (jobs.filter { it.state == Job.DONE || it.state == Job.SKIP }.mapNotNull { j -> j.file?.takeIf { j.url == url || (id != null && Web.idOf(j.url) == id) } } +
             history.filter { it.ok && it.file != null && (it.url == url || (id != null && it.key == id)) }.mapNotNull { it.file })
-            .firstOrNull { File(it).exists() && (audio == null || isAudioName(it) == audio) }   // video varken şarkı istendiyse "var" sayma
+            .firstOrNull { File(it).let { f -> f.isFile && f.length() > 0 } && (audio == null || isAudioName(it) == audio) }   // video varken şarkı istendiyse "var" sayma
     }
 
     private fun notifyDone(c: Context, title: String, text: String, file: String? = null) {
@@ -640,13 +640,18 @@ object Dl {
             when {
                 "has already been recorded in the archive" in out -> {
                     val have = existing(j.url, j.opts.audio)
-                    if (have == null && useArchive && attempt < 5) {
+                    if (have == null && useArchive) {
                         // Arşivde kayıtlı ama dosya silinmiş: kaydı arşivden çıkar ve yeniden indir
                         forgetArchived(c, j.url); useArchive = false
                         j.phase = "Telefonda yok, yeniden indiriliyor…"
                         Report.log("indirme", "${j.url} → arşivde vardı ama dosya yok, yeniden indiriliyor"); continue
                     }
+                    if (have == null) {   // arşivsiz denemede bile atlandıysa "var" deme, hata göster
+                        j.state = Job.ERR; j.error = "İndirilemedi: telefonda dosya yok ama site atladı. Tekrar dene."; return
+                    }
+                    Library.scan(c, have)   // dosya duruyor ama kitaplıkta görünmüyorsa görünsün
                     j.state = Job.SKIP; j.progress = 1f; j.file = have
+                    j.phase = "Zaten indirilmiş · " + (File(have).parentFile?.name ?: "")
                     return
                 }
                 path != null -> {

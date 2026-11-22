@@ -98,6 +98,8 @@ class Job(
     var expectFiles = 1
     @Volatile var bps = 0L
     var durSec = 0
+    @Volatile var post = false        // yt-dlp son işlemlere (birleştirme vb.) geçti mi
+    @Volatile var hint = 0L           // analizden: görüntü + ses toplam tahmini boyut
     @Volatile var exactSeen = false   // diskteki gerçek ölçüm başladı mı
     @Volatile var expected = 0L      // yt-dlp'nin indirme öncesi bildirdiği toplam bayt
     var curMax = 0L
@@ -403,9 +405,24 @@ object Dl {
      *  - görüntü + ses ayrı iniyorsa ses için görüntünün ~%12'si kadar pay ayrılır, ses başlayınca gerçek boyut kullanılır,
      *  - %97'den sonrası birleştirme/dönüştürme içindir.
      */
+    private val POST = listOf("[Merger]", "[ExtractAudio]", "[EmbedThumbnail]", "[Metadata]", "[EmbedSubtitle]", "[FixupM", "[ModifyChapters]", "[SponsorBlock]", "[MoveFiles]", "[ThumbnailsConvertor]", "[VideoConvertor]")
+
     internal fun onProgress(j: Job, raw: Float, line: String) {
-        if (raw < 0) return
         val now = System.currentTimeMillis()
+        // "Birleştiriliyor" yalnızca yt-dlp gerçekten son işleme geçince yazılır (inen boyuta bakıp tahmin edilmez)
+        POST.firstOrNull { line.startsWith(it) }?.let { tag ->
+            if (!j.post) { j.post = true; if (j.tDlEnd == 0L) j.tDlEnd = now }
+            j.phase = when (tag) {
+                "[Merger]" -> "Birleştiriliyor…"
+                "[ExtractAudio]" -> "Dönüştürülüyor…"
+                "[ModifyChapters]", "[SponsorBlock]" -> "Sponsor kısımları kesiliyor…"
+                "[MoveFiles]" -> "Kaydediliyor…"
+                else -> "Son işlemler…"
+            }
+            j.speed = ""; j.eta = ""
+            return
+        }
+        if (raw < 0) return
         val size = sizeRx.find(line)?.let { bytesOf(it.groupValues[1], it.groupValues[2]) } ?: 0L
         // altyazı/kapak gibi küçük yardımcı dosyalar ilerlemeyi bozmasın
         if (!j.opts.audio && size in 1 until 400_000) return
@@ -424,7 +441,7 @@ object Dl {
             val mapped = (minOf(if (total > 0) j.gotBytes.toFloat() / total else 1f, raw / 100f) * 0.97f).coerceAtMost(0.97f)
             if (mapped > j.progress) j.progress = mapped                     // asla geri gitmez
         }
-        if (j.expected <= 0 || j.progress < 0.96f) j.phase = when {
+        if (!j.post) j.phase = when {
             raw >= 100f && last -> if (j.opts.audio) "Dönüştürülüyor…" else if (j.expectFiles > 1) "Birleştiriliyor…" else "Kaydediliyor…"
             j.opts.audio -> "İndiriliyor"
             j.expectFiles > 1 && j.fileIdx == 0 -> "Görüntü indiriliyor"
@@ -450,7 +467,9 @@ object Dl {
         Thread {
             var lastGot = 0L; var lastT = System.currentTimeMillis()
             while (run.get()) {
-                if (j.expected <= 0) j.expected = try { sizeFile.readText().trim().lines().lastOrNull()?.trim()?.toLongOrNull() ?: 0L } catch (_: Exception) { 0L }
+                if (j.expected <= 0) j.expected = (try { sizeFile.readText().trim().lines().lastOrNull()?.trim()?.toLongOrNull() ?: 0L } catch (_: Exception) { 0L })
+                    // yt-dlp bazen sadece görüntünün boyutunu bildirir: analizdeki görüntü + ses toplamı daha büyükse onu kullan
+                    .let { e -> if (e > 0 && j.hint > e && j.hint < e * 2.5) j.hint else e }
                 val e = j.expected
                 if (e > 0) {
                     val got = dirSize(tmp)
@@ -462,10 +481,7 @@ object Dl {
                     val f = (got.toFloat() / e * 0.97f).coerceAtMost(0.97f)
                     if (!j.exactSeen) { j.exactSeen = true; j.progress = f }      // tahminden gerçek ölçüme geç
                     else if (f > j.progress) j.progress = f                       // sonra asla geri gitmez
-                    if (got >= e * 0.985) {
-                        if (j.tDlEnd == 0L) j.tDlEnd = System.currentTimeMillis()
-                        j.phase = if (j.opts.audio) "Dönüştürülüyor…" else if (j.expectFiles > 1) "Birleştiriliyor…" else "Kaydediliyor…"
-                    }
+                    if (got >= e * 0.985 && j.tDlEnd == 0L) j.tDlEnd = System.currentTimeMillis()
                 }
                 try { Thread.sleep(500) } catch (_: InterruptedException) { break }
             }
@@ -537,7 +553,15 @@ object Dl {
     private fun run(c: Context, j: Job) {
         try { Web.init(c) } catch (e: Exception) { j.state = Job.ERR; j.error = "İndirme motoru başlatılamadı"; return }
         val started = System.currentTimeMillis()
-        j.tStart = started; j.tFirst = 0; j.tDlEnd = 0; j.bytes = 0; j.timing = ""
+        j.tStart = started; j.tFirst = 0; j.tDlEnd = 0; j.bytes = 0; j.timing = ""; j.post = false
+        j.hint = Web.freshInfo(c, j.url)?.let { f ->
+            try {
+                val o = org.json.JSONObject(f.readText()); val d = o.optDouble("duration", 0.0)
+                val rf = o.optJSONArray("requested_formats") ?: return@let 0L
+                (0 until rf.length()).sumOf { i -> val x = rf.getJSONObject(i)
+                    x.optLong("filesize", 0).takeIf { it > 0 } ?: x.optLong("filesize_approx", 0).takeIf { it > 0 } ?: (x.optDouble("tbr", 0.0) * 125 * d).toLong() }
+            } catch (_: Exception) { 0L }
+        } ?: 0L
         j.curSize = 0; j.curMax = 0; j.doneBytes = 0; j.gotBytes = 0; j.totalBytes = 0; j.fileIdx = 0; j.lastRaw = 0f
         // kaç dosya inecek? ses: 1 · yerel dosya: 1 · YouTube videosu: görüntü + ses · diğer: analizden, yoksa 1
         j.durSec = Web.freshInfo(c, j.url)?.let { f -> try { org.json.JSONObject(f.readText()).optDouble("duration", 0.0).toInt() } catch (_: Exception) { 0 } } ?: 0
@@ -586,6 +610,7 @@ object Dl {
                     val dlSec = (((if (j.tDlEnd > 0) j.tDlEnd else j.tEnd) - (if (j.tFirst > 0) j.tFirst else j.tStart)) / 1000f).coerceAtLeast(0.5f)
                     val post = ((j.tEnd - (if (j.tDlEnd > 0) j.tDlEnd else j.tEnd)) / 1000)
                     j.timing = "Hazırlık ${prep} sn · ort. " + String.format(java.util.Locale.forLanguageTag("tr"), "%.1f MB/sn", size / 1048576f / dlSec) + " · işleme ${post} sn"
+                    Report.log("indirme süresi", "${j.title.take(60)} · ${fmtSize(size)} · indirme ${dlSec.toInt()} sn · ${j.timing}")
                     if (j.title.isBlank() || j.title.startsWith("http")) j.title = File(path).nameWithoutExtension
                     return
                 }

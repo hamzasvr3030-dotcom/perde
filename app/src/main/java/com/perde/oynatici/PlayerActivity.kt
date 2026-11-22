@@ -853,7 +853,7 @@ class PlayerActivity : AppCompatActivity() {
     fun seekDragUpdate(frac: Float) {
         if (ui.casting) return
         val d = player.duration.takeIf { it > 0 } ?: return
-        val span = minOf(d, 600_000L).coerceAtLeast(60_000L)
+        val span = minOf(d, 180_000L).coerceAtLeast(30_000L)   // ekran genişliği = en çok 3 dk
         val target = (seekStart + (frac * span).toLong()).coerceIn(0, d)
         seekPreview = target
         val diff = target - seekStart

@@ -49,6 +49,7 @@ object DlPrefs {
     var wifiOnly by BoolP("dlWifi", false)
     var parallel by IntP("dlPar3", 3)
     var fast by BoolP("dlFast", true)
+    var onePass by BoolP("dlOnePass", true)   // görüntü + ses tek seferde aynı dosyaya (ayrı birleştirme adımı yok)
     var rate by IntP("dlRate", 0)          // 0 sınırsız, 1: 1 MB/sn, 2: 2 MB/sn, 3: 5 MB/sn
     var archive by BoolP("dlArch", true)
     var clipboard by BoolP("dlClip", true)
@@ -552,6 +553,11 @@ object Dl {
             val av1 = if (h > 1080) "" else "[vcodec!^=av01]"
             r.addOption("-f", "bv*[height<=$h][ext=mp4]$av1+ba[ext=m4a]/bv*[height<=$h]$av1+ba/b[height<=$h]/bv*+ba/b")
             r.addOption("--merge-output-format", "mp4")
+            if (DlPrefs.onePass && !safe && !local) {
+                // ffmpeg görüntüyü ve sesi aynı anda çekip doğrudan tek mp4'e yazar: indirme bitince birleştirme beklenmez
+                r.addOption("--downloader", "ffmpeg")
+                r.addOption("--downloader-args", "ffmpeg_i:-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5")
+            }
             if (o.chapters) r.addOption("--embed-chapters")
             if (subs) { r.addOption("--write-subs"); r.addOption("--write-auto-subs"); r.addOption("--sub-langs", "tr,en"); r.addOption("--convert-subs", "srt") }
             if (o.sponsor) r.addOption("--sponsorblock-remove", "sponsor,selfpromo,interaction")

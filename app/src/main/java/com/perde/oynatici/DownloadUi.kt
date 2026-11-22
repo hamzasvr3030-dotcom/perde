@@ -623,6 +623,7 @@ fun DlSettingsContent() {
         SetSwitch("Sadece Wi-Fi'de indir", "Mobil veride indirmeler bekletilir", DlPrefs.wifiOnly) { DlPrefs.wifiOnly = it; Dl.pump() }
         SetChoice("Aynı anda indirme", listOf("1", "2", "3", "4", "5", "6"), (DlPrefs.parallel - 1).coerceIn(0, 5)) { DlPrefs.parallel = it + 1; ver++; Dl.pump() }
         SetSwitch("Hızlı indirme", "YouTube dosyasını 16 parçaya bölüp aynı anda indirir", DlPrefs.fast) { DlPrefs.fast = it }
+        SetSwitch("Görüntü ve sesi tek seferde indir", "Ayrı birleştirme adımı olmaz, dosya inerken hazırlanır. Yavaş gelirse kapat", DlPrefs.onePass) { DlPrefs.onePass = it }
         SetSwitch("Akıllı kalite", "Wi-Fi'de seçtiğin kalite, mobil veride en fazla aşağıdaki kalite (izlerken de)", DlPrefs.smartQuality) { DlPrefs.smartQuality = it }
         SetChoice("Mobil veride en fazla", listOf("360p", "480p", "720p"), listOf(360, 480, 720).indexOf(DlPrefs.mobileHeight).coerceAtLeast(1)) { DlPrefs.mobileHeight = listOf(360, 480, 720)[it]; ver++ }
         SetChoice("Hız sınırı", DlPrefs.RATES, DlPrefs.rate) { DlPrefs.rate = it; ver++ }

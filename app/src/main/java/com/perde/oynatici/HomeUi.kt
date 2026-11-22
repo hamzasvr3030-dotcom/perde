@@ -722,12 +722,14 @@ fun PlaylistScreen(vm: LibVM, id: Long, back: () -> Unit) {
     var renaming by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     val pl = p ?: run { back(); return }
+    val picked = remember { mutableStateListOf<Int>() }
+    BackHandlerCompat(picked.isNotEmpty()) { picked.clear() }
     Page(pl.name, back, actions = {
         IconButton(onClick = { renaming = true }) { Icon(Icons.Filled.Edit, "Yeniden adlandır") }
         IconButton(onClick = { deleting = true }) { Icon(Icons.Filled.Delete, "Listeyi sil") }
     }) {
         if (pl.items.isEmpty()) Empty(Icons.AutoMirrored.Filled.PlaylistPlay, "Liste boş.\nBir video veya şarkının menüsünden \"Listeye ekle\" de.")
-        else LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+        else Box(Modifier.fillMaxSize()) { LazyColumn(contentPadding = PaddingValues(bottom = if (picked.isEmpty()) 24.dp else 150.dp)) {
             item {
                 Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(onClick = { playKeys(ctx, pl.items, 0) }) { Icon(Icons.Filled.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Oynat") }
@@ -736,7 +738,10 @@ fun PlaylistScreen(vm: LibVM, id: Long, back: () -> Unit) {
             }
             itemsIndexed(pl.items, key = { i, k -> "$i$k" }) { i, k ->
                 val v = Library.byKey(k); val s = Music.byKey(k)
-                Row(Modifier.fillMaxWidth().clickable { playKeys(ctx, pl.items, i) }.padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                val on = i in picked
+                Row(Modifier.fillMaxWidth().combinedClickable(onClick = { if (picked.isNotEmpty()) picked.toggle(i) else playKeys(ctx, pl.items, i) }, onLongClick = { picked.toggle(i) })
+                    .background(if (on) Accent.copy(alpha = 0.12f) else Color.Transparent).padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (picked.isNotEmpty()) SelMark(on)
                     when {
                         v != null -> Thumb(v, Modifier.size(96.dp, 54.dp))
                         s != null -> ArtImage(s.key, s.uri, s.path, Modifier.size(54.dp), RoundedCornerShape(10.dp))
@@ -748,6 +753,15 @@ fun PlaylistScreen(vm: LibVM, id: Long, back: () -> Unit) {
                     }
                     IconButton(enabled = i > 0, onClick = { Playlists.move(id, i, i - 1); p = Playlists.get(id) }) { Icon(Icons.Filled.KeyboardArrowUp, "Yukarı") }
                     IconButton(onClick = { Playlists.remove(id, k); p = Playlists.get(id) }) { Icon(Icons.Filled.Close, "Çıkar", tint = Muted) }
+                }
+            }
+        }
+            if (picked.isNotEmpty()) SelBar(picked.size, pl.items.size, { if (picked.size >= pl.items.size) picked.clear() else { picked.clear(); picked.addAll(pl.items.indices) } }, { picked.clear() },
+                Modifier.align(Alignment.BottomCenter)) {
+                SelAction(Icons.Filled.PlayArrow, "Oynat") { val ks = picked.sorted().map { pl.items[it] }; picked.clear(); playKeys(ctx, ks, 0) }
+                SelAction(Icons.Filled.Close, "Listeden çıkar", Color(0xFFFF6B6B)) {
+                    val ks = picked.map { pl.items[it] }.toSet(); picked.clear()
+                    ks.forEach { Playlists.remove(id, it) }; p = Playlists.get(id); toast(ctx, "${ks.size} öğe çıkarıldı")
                 }
             }
         }

@@ -102,18 +102,27 @@ fun AudioBars(playing: Boolean, color: Color = Accent, modifier: Modifier = Modi
 }
 
 @Composable
-fun SongRow(s: Song, onClick: () -> Unit, onMore: (() -> Unit)?) {
+fun SongRow(s: Song, onClick: () -> Unit, onMore: (() -> Unit)?, picked: Boolean? = null, onLong: (() -> Unit)? = null) {
     val current = NowState.key == s.key && NowState.hasItem
-    Row(Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = { onMore?.invoke() }).padding(horizontal = 16.dp, vertical = 7.dp),
+    Row(Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = { (onLong ?: onMore)?.invoke() })
+        .background(if (picked == true) Accent.copy(alpha = 0.12f) else Color.Transparent).padding(horizontal = 16.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically) {
+        if (picked != null) SelMark(picked)
         ArtImage(s.key, s.uri, s.path, Modifier.size(54.dp), RoundedCornerShape(12.dp))
         Column(Modifier.weight(1f).padding(start = 12.dp)) {
             Text(s.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium, color = if (current) Accent else Color.Unspecified)
             Text("${s.artist} · ${fmtTime(s.duration)}", maxLines = 1, overflow = TextOverflow.Ellipsis, color = Muted, fontSize = 13.sp)
         }
         if (current) AudioBars(NowState.playing, modifier = Modifier.padding(horizontal = 8.dp))
-        if (onMore != null) IconButton(onClick = onMore) { Icon(Icons.Filled.MoreHoriz, "Seçenekler", tint = Muted) }
+        if (onMore != null && picked == null) IconButton(onClick = onMore) { Icon(Icons.Filled.MoreHoriz, "Seçenekler", tint = Muted) }
     }
+}
+
+/** Seçim destekli şarkı satırı: seçim varken dokunmak işaretler, basılı tutmak seçimi başlatır. */
+@Composable
+fun PickSongRow(s: Song, picked: MutableList<String>, onPlay: () -> Unit, onMore: () -> Unit) {
+    val selecting = picked.isNotEmpty()
+    SongRow(s, { if (selecting) picked.toggle(s.key) else onPlay() }, onMore, if (selecting) s.key in picked else null) { picked.toggle(s.key) }
 }
 
 @Composable
@@ -152,6 +161,8 @@ fun MusicScreen(vm: LibVM, go: (Route) -> Unit) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var sel by remember { mutableStateOf<Song?>(null) }
     val songs = vm.songs
+    val picked = remember { mutableStateListOf<String>() }
+    LaunchedEffect(tab) { picked.clear() }
     Page("Müzik", null, actions = {
         IconButton(onClick = { go(Route.MusicSearch) }) { Icon(Icons.Filled.Search, "Ara") }
         IconButton(onClick = { AppState.eqSheet = true }) { Icon(Icons.Filled.Equalizer, "Ekolayzer") }
@@ -171,9 +182,12 @@ fun MusicScreen(vm: LibVM, go: (Route) -> Unit) {
             }
             when (tab) {
                 0 -> ForYouPage(vm, go)
-                1 -> LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
-                    item { PlayButtons(songs) }
-                    itemsIndexed(songs, key = { _, s -> s.key }) { i, s -> SongRow(s, { Engine.playSongs(ctx, songs, i) }) { sel = s } }
+                1 -> Box(Modifier.fillMaxSize()) {
+                    LazyColumn(contentPadding = PaddingValues(bottom = if (picked.isEmpty()) 24.dp else 150.dp)) {
+                        item { PlayButtons(songs) }
+                        itemsIndexed(songs, key = { _, s -> s.key }) { i, s -> PickSongRow(s, picked, { Engine.playSongs(ctx, songs, i) }) { sel = s } }
+                    }
+                    SongSelBar(songs, picked, vm, Modifier.align(Alignment.BottomCenter))
                 }
                 2 -> {
                     val albums = remember(songs) { Music.albums(songs) }
@@ -245,11 +259,15 @@ fun MusicScreen(vm: LibVM, go: (Route) -> Unit) {
 private fun SongListPage(title: String, header: @Composable () -> Unit, songs: List<Song>, vm: LibVM, back: () -> Unit) {
     val ctx = LocalContext.current
     var sel by remember { mutableStateOf<Song?>(null) }
+    val picked = remember { mutableStateListOf<String>() }
     Page(title, back) {
-        LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
-            item { header() }
-            item { PlayButtons(songs) }
-            itemsIndexed(songs, key = { _, s -> s.key }) { i, s -> SongRow(s, { Engine.playSongs(ctx, songs, i) }) { sel = s } }
+        Box(Modifier.fillMaxSize()) {
+            LazyColumn(contentPadding = PaddingValues(bottom = if (picked.isEmpty()) 24.dp else 150.dp)) {
+                item { header() }
+                item { PlayButtons(songs) }
+                itemsIndexed(songs, key = { _, s -> s.key }) { i, s -> PickSongRow(s, picked, { Engine.playSongs(ctx, songs, i) }) { sel = s } }
+            }
+            SongSelBar(songs, picked, vm, Modifier.align(Alignment.BottomCenter))
         }
     }
     sel?.let { s -> SongActions(s, vm) { sel = null } }
@@ -291,6 +309,7 @@ fun MusicFolderScreen(vm: LibVM, path: String, back: () -> Unit) {
 fun MusicSearchScreen(vm: LibVM, back: () -> Unit) {
     val ctx = LocalContext.current
     var q by remember { mutableStateOf("") }
+    val picked = remember { mutableStateListOf<String>() }
     val res = remember(q, vm.songs) {
         val s = q.trim().lowercase(TR)
         if (s.isEmpty()) emptyList() else vm.songs.filter { it.title.lowercase(TR).contains(s) || it.artist.lowercase(TR).contains(s) || it.album.lowercase(TR).contains(s) }
@@ -302,7 +321,13 @@ fun MusicSearchScreen(vm: LibVM, back: () -> Unit) {
                 leadingIcon = { Icon(Icons.Filled.Search, null) }, shape = CircleShape)
         }
         if (q.isNotBlank() && res.isEmpty()) Empty(Icons.Filled.SearchOff, "\"$q\" için sonuç yok.")
-        else LazyColumn { itemsIndexed(res, key = { _, s -> s.key }) { i, s -> SongRow(s, { Engine.playSongs(ctx, res, i); AppState.showNow = true }, null) } }
+        else Box(Modifier.fillMaxSize()) {
+            LazyColumn(contentPadding = PaddingValues(bottom = if (picked.isEmpty()) 24.dp else 150.dp)) { itemsIndexed(res, key = { _, s -> s.key }) { i, s ->
+                val selecting = picked.isNotEmpty()
+                SongRow(s, { if (selecting) picked.toggle(s.key) else { Engine.playSongs(ctx, res, i); AppState.showNow = true } }, null, if (selecting) s.key in picked else null) { picked.toggle(s.key) }
+            } }
+            SongSelBar(res, picked, vm, Modifier.align(Alignment.BottomCenter))
+        }
     }
 }
 

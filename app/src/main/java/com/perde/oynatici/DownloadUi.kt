@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 
 package com.perde.oynatici
 
@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.*
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -128,7 +129,7 @@ fun DownloadScreen(go: (Route) -> Unit) {
         IconButton(onClick = { go(Route.DlHistory) }) { Icon(Icons.Filled.History, "Geçmiş") }
         IconButton(onClick = { accounts = true }) { Icon(Icons.Filled.AccountCircle, "Hesaplar") }
         IconButton(onClick = { settings = true }) { Icon(Icons.Filled.Tune, "İndirme ayarları") }
-    }) {
+    }) { Box(Modifier.fillMaxSize()) {
         LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp)) {
             item {
                 Box(Modifier.padding(bottom = 14.dp)) { PillSwitch(listOf("Bağlantı", "YouTube'da ara"), mode) { mode = it } }
@@ -220,8 +221,10 @@ fun DownloadScreen(go: (Route) -> Unit) {
                 }
                 items(Dl.groups, key = { it.id }) { g -> GroupCard(g) }
                 items(Dl.jobs.filter { it.group == null }, key = { it.id }) { j -> JobRow(j) }
+                if (DlSel.ids.isNotEmpty()) item { Spacer(Modifier.height(130.dp)) }
             }
         }
+        DlSelBar(Modifier.align(Alignment.BottomCenter)) }
     }
 
     request?.let { (r, audio) ->
@@ -426,9 +429,15 @@ private fun sourceOf(url: String, audio: Boolean, list: Boolean = false): Pair<I
 @Composable
 private fun JobRow(j: Job, compact: Boolean = false) {
     val ctx = LocalContext.current
-    Row(Modifier.fillMaxWidth().padding(vertical = if (compact) 2.dp else 5.dp).clip(RoundedCornerShape(20.dp)).background(if (compact) Color.Transparent else Surf)
-        .clickable(enabled = j.state == Job.DONE || (j.state == Job.SKIP && j.file != null)) { j.file?.let { playKeys(ctx, listOf(it)) } }
+    val selecting = DlSel.ids.isNotEmpty(); val on = j.id in DlSel.ids
+    Row(Modifier.fillMaxWidth().padding(vertical = if (compact) 2.dp else 5.dp).clip(RoundedCornerShape(20.dp))
+        .background(if (on) Accent.copy(alpha = 0.18f) else if (compact) Color.Transparent else Surf)
+        .combinedClickable(onClick = {
+            if (selecting) DlSel.ids.toggle(j.id)
+            else if (j.state == Job.DONE || (j.state == Job.SKIP && j.file != null)) j.file?.let { playKeys(ctx, listOf(it)) }
+        }, onLongClick = { DlSel.ids.toggle(j.id) })
         .padding(if (compact) 6.dp else 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (selecting) SelMark(on)
         if (!compact) {
             val (ic, col) = sourceOf(j.url, j.opts.audio)
             SourceBadge(ic, col)

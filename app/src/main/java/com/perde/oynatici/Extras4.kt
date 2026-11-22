@@ -74,6 +74,36 @@ object LastQueue {
     } catch (_: Exception) { null }
 }
 
+/**
+ * Arama gelince (çalarken, telefon ya da WhatsApp gibi uygulama araması) çalan şarkı/video durur, arama bitince kendiliğinden sürmez.
+ * Android 12+: ses modu dinlenir (izin gerekmez). Daha eskisi: telefon durumu dinlenir (bu sürümlerde izin gerekmez).
+ */
+object CallPause {
+    private var started = false
+    private fun inCall(mode: Int) = mode == AudioManager.MODE_RINGTONE || mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION
+
+    fun start(app: Context) {
+        if (started) return; started = true
+        val main = Handler(Looper.getMainLooper())
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 31) {
+                val am = app.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                am.addOnModeChangedListener({ r -> main.post(r) }) { mode -> if (inCall(mode)) Headset.pauseNow("arama (ses modu $mode)") }
+            } else {
+                val tm = app.getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
+                main.post {
+                    @Suppress("DEPRECATION")
+                    tm.listen(object : android.telephony.PhoneStateListener() {
+                        @Deprecated("eski API") override fun onCallStateChanged(state: Int, phoneNumber: String?) {
+                            if (state != android.telephony.TelephonyManager.CALL_STATE_IDLE) Headset.pauseNow("arama")
+                        }
+                    }, android.telephony.PhoneStateListener.LISTEN_CALL_STATE)
+                }
+            }
+        } catch (e: Exception) { Report.err("arama dinleyici", e) }
+    }
+}
+
 /** Kulaklık/Bluetooth takılınca son çalan müziği kaldığı yerden sürdürür. */
 object Headset {
     private var since = 0L
@@ -93,7 +123,21 @@ object Headset {
                 if (added.none { it.isSink && it.type in OUT }) return
                 Handler(Looper.getMainLooper()).postDelayed({ resume(app) }, 800)
             }
+
+            // Bluetooth/kablolu kulaklık çıkınca hoparlörden çalmaya devam etmesin (bazı telefonlar "noisy" yayınını göndermiyor)
+            override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) {
+                if (removed.none { it.isSink && it.type in OUT }) return
+                pauseNow("kulaklık/Bluetooth ayrıldı")
+            }
         }, Handler(Looper.getMainLooper()))
+        CallPause.start(app)
+    }
+
+    /** Çalan şarkı ya da video ne ise durdurur. */
+    fun pauseNow(why: String) {
+        val p = Engine.player ?: return
+        if (!p.playWhenReady) return
+        p.pause(); Report.log("duraklatma", why)
     }
 
     private fun bind(ctx: Context) {

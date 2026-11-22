@@ -130,7 +130,7 @@ fun SmbBrowseScreen(s: SmbServer, path: String, go: (Route) -> Unit, back: () ->
                         val child = if (path.isEmpty()) x.name else "$path\\${x.name}"
                         ListItem(headlineContent = { Text(x.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
                             supportingContent = if (x.isDir) null else ({ Text(fmtSize(x.size)) }),
-                            leadingContent = { Icon(if (x.isDir) Icons.Filled.Folder else if (isAudioName(x.name)) Icons.Filled.MusicNote else Icons.Filled.Movie, null, tint = if (x.isDir) Accent else Color.White) },
+                            leadingContent = { Icon(if (x.isDir) Icons.Filled.Folder else if (isAudioName(x.name)) Icons.Filled.MusicNote else Icons.Filled.Movie, null, tint = if (x.isDir) Accent else Ink) },
                             modifier = Modifier.clickable {
                                 if (x.isDir) go(Route.SmbBrowse(s, child))
                                 else {

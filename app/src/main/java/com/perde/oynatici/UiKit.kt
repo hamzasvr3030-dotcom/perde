@@ -48,7 +48,7 @@ fun Group(title: String? = null, modifier: Modifier = Modifier, content: @Compos
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         if (title != null) Text(title, fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.padding(start = 4.dp, top = 18.dp, bottom = 8.dp))
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Surf)
-            .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(18.dp)), content = content)
+            .border(1.dp, Line, RoundedCornerShape(18.dp)), content = content)
     }
 }
 
@@ -69,7 +69,7 @@ fun GroupRow(
         if (trailing != null) Text(trailing, color = Muted, fontSize = 14.sp, modifier = Modifier.padding(end = 4.dp))
         if (chevron) Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Muted.copy(alpha = 0.7f))
     }
-    if (!last) HorizontalDivider(Modifier.padding(start = 58.dp), color = Color.White.copy(alpha = 0.06f))
+    if (!last) HorizontalDivider(Modifier.padding(start = 58.dp), color = Line)
 }
 
 @Composable
@@ -85,7 +85,7 @@ fun GroupSwitch(icon: ImageVector, title: String, sub: String?, value: Boolean, 
         }
         Switch(v, { v = it; onChange(it) }, colors = SwitchDefaults.colors(checkedTrackColor = Accent))
     }
-    if (!last) HorizontalDivider(Modifier.padding(start = 58.dp), color = Color.White.copy(alpha = 0.06f))
+    if (!last) HorizontalDivider(Modifier.padding(start = 58.dp), color = Line)
 }
 
 /** Kadraj logosu: degrade kare içinde "K". */

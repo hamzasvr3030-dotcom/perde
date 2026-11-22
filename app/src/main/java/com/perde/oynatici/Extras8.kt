@@ -32,10 +32,11 @@ import java.util.concurrent.Executors
  */
 @Composable
 fun SeekLine(frac: Float, modifier: Modifier = Modifier, active: Color = Color.White, track: Color = Color.White.copy(alpha = 0.25f),
-             marks: List<Pair<Float, Color>> = emptyList(), onDrag: (Float) -> Unit, onDone: (Float) -> Unit) {
+             marks: List<Pair<Float, Color>> = emptyList(), thick: androidx.compose.ui.unit.Dp = 4.dp, knob: Boolean = true,
+             onDrag: (Float) -> Unit, onDone: (Float) -> Unit) {
     var drag by remember { mutableStateOf<Float?>(null) }
-    val h by animateDpAsState(if (drag != null) 8.dp else 4.dp, label = "sk")
-    val r by animateDpAsState(if (drag != null) 10.dp else 7.dp, label = "sr")
+    val h by animateDpAsState(if (drag != null) thick * 2 else thick, label = "sk")
+    val r by animateDpAsState(if (drag != null) 10.dp else if (knob) 7.dp else 0.dp, label = "sr")
     val cur = rememberUpdatedState(onDrag); val done = rememberUpdatedState(onDone)
     Canvas(modifier.fillMaxWidth().height(32.dp)
         .pointerInput(Unit) {
@@ -53,7 +54,8 @@ fun SeekLine(frac: Float, modifier: Modifier = Modifier, active: Color = Color.W
         drawRoundRect(track, Offset(0f, y - th / 2), Size(size.width, th), cr)
         drawRoundRect(active, Offset(0f, y - th / 2), Size(size.width * f, th), cr)
         marks.forEach { (m, c) -> drawCircle(c, 2.5.dp.toPx(), Offset(size.width * m, y - th / 2 - 5.dp.toPx())) }
-        drawCircle(active, r.toPx(), Offset(size.width * f, y))
+        if (r.toPx() > 0f) drawCircle(active, r.toPx(), Offset(size.width * f, y))
+        else drawRect(active, Offset(size.width * f - 1.dp.toPx(), y - 6.dp.toPx()), Size(2.dp.toPx(), 12.dp.toPx()))
     }
 }
 

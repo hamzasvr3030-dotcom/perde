@@ -55,7 +55,7 @@ fun SelBar(count: Int, total: Int, onAll: () -> Unit, onClose: () -> Unit, modif
 
 /** Çubuktaki simgeli işlem düğmesi (simge + küçük yazı). */
 @Composable
-fun SelAction(icon: ImageVector, label: String, tint: Color = Color.White, enabled: Boolean = true, onClick: () -> Unit) {
+fun SelAction(icon: ImageVector, label: String, tint: Color = Ink, enabled: Boolean = true, onClick: () -> Unit) {
     Column(Modifier.clip(RoundedCornerShape(14.dp)).clickable(enabled = enabled, onClick = onClick).padding(horizontal = 8.dp, vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(icon, null, tint = if (enabled) tint else tint.copy(alpha = 0.35f), modifier = Modifier.size(22.dp))
@@ -67,7 +67,7 @@ fun SelAction(icon: ImageVector, label: String, tint: Color = Color.White, enabl
 @Composable
 fun SelMark(on: Boolean) {
     Box(Modifier.padding(end = 10.dp).size(24.dp).clip(CircleShape).background(if (on) Accent else Color.Transparent)
-        .then(if (on) Modifier else Modifier.background(Color.White.copy(alpha = 0.12f))), contentAlignment = Alignment.Center) {
+        .then(if (on) Modifier else Modifier.background(Ink.copy(alpha = 0.12f))), contentAlignment = Alignment.Center) {
         if (on) Icon(Icons.Filled.Check, null, tint = Color.White, modifier = Modifier.size(16.dp))
     }
 }

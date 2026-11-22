@@ -25,6 +25,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -277,13 +278,17 @@ private fun Shell(vm: LibVM) {
             else -> AppState.tab = 0
         }
     }
+    val floatNav = ThemeState.style.floatNav
     Scaffold(
-        containerColor = Bg,
+        modifier = Modifier.background(BgBrush),
+        containerColor = Color.Transparent,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             Column {
                 MiniPlayer { AppState.showNow = true }
-                NavigationBar(containerColor = Surf, tonalElevation = 0.dp) {
+                NavigationBar(containerColor = if (floatNav) Color.Transparent else Surf, tonalElevation = 0.dp,
+                    modifier = if (floatNav) Modifier.background(Bg).padding(horizontal = 12.dp).padding(bottom = 10.dp)
+                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(Rad + 4.dp)).background(Surf) else Modifier) {
                     listOf(
                         Triple("Videolar", Icons.Filled.SmartDisplay, Icons.Outlined.SmartDisplay),
                         Triple("Müzik", Icons.Filled.MusicNote, Icons.Outlined.MusicNote),
@@ -299,7 +304,7 @@ private fun Shell(vm: LibVM) {
                                 else Icon(if (tab == i) on else off, label)
                             },
                             label = { Text(label, maxLines = 1, fontSize = 11.sp, fontWeight = if (tab == i) FontWeight.Bold else FontWeight.Medium) },
-                            colors = NavigationBarItemDefaults.colors(selectedIconColor = Color.White, indicatorColor = Accent, selectedTextColor = Color.White,
+                            colors = NavigationBarItemDefaults.colors(selectedIconColor = Color.White, indicatorColor = Accent, selectedTextColor = Ink,
                                 unselectedIconColor = Muted, unselectedTextColor = Muted)
                         )
                     }

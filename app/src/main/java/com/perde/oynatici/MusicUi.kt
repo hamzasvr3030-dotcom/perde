@@ -21,6 +21,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -134,7 +135,7 @@ private fun PlayButtons(songs: List<Song>) {
         }
         Button(onClick = { Engine.playSongs(ctx, songs, songs.indices.random(), shuffle = true); AppState.showNow = true }, enabled = songs.isNotEmpty(),
             modifier = Modifier.weight(1f).height(52.dp), shape = CircleShape, colors = ButtonDefaults.buttonColors(containerColor = Surf2, contentColor = Accent)) {
-            Icon(Icons.Filled.Shuffle, null); Spacer(Modifier.width(6.dp)); Text("Karışık", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            Icon(Icons.Filled.Shuffle, null); Spacer(Modifier.width(6.dp)); Text("Karışık", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Ink)
         }
     }
 }
@@ -145,7 +146,7 @@ private fun MusicBoostContent() {
     Text("Ses yükseltme", fontSize = 21.sp, fontWeight = FontWeight.Bold)
     Text("Telefonun sesi en sonda olsa bile müziği daha yüksek çalar. Çok yükseltince bazı şarkılarda cızırtı olabilir.",
         color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp, bottom = 16.dp))
-    Text("%${100 + v.roundToInt()}", fontSize = 40.sp, fontWeight = FontWeight.Black, color = if (v > 0) Accent else Color.White)
+    Text("%${100 + v.roundToInt()}", fontSize = 40.sp, fontWeight = FontWeight.Black, color = if (v > 0) Accent else Ink)
     Slider(v, { v = it; Prefs.musicBoost = it.roundToInt(); Engine.applyMusicBoost() }, valueRange = 0f..100f, steps = 9)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf(0, 25, 50, 100).forEach { x ->
@@ -463,11 +464,23 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
         }
     }
 
-    Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(bgTop, Color(0xFF0B0B0E)))).systemBarsPadding().padding(horizontal = 22.dp)) {
+    val look = ThemeState.style.play
+    val artShape = when (look.art) { 1 -> CircleShape; 2 -> RoundedCornerShape(6.dp); 3 -> RoundedCornerShape(34.dp); else -> RoundedCornerShape(Rad + 8.dp) }
+    // plak: çalarken döner, durunca olduğu yerde kalır
+    var spin by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(NowState.playing, look.art) {
+        if (look.art != 1 || !NowState.playing) return@LaunchedEffect
+        var last = 0L
+        while (true) { androidx.compose.runtime.withFrameNanos { t -> if (last != 0L) spin = (spin + (t - last) / 1e9f * 24f) % 360f; last = t } }
+    }
+    androidx.compose.runtime.CompositionLocalProvider(LocalContentColor provides NpFg, LocalGlassFg provides NpFg) {
+    Box(Modifier.fillMaxSize()) {
+    NpBackground(look.bg, bgTop, tint, art)
+    Column(Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 22.dp)) {
         Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             GlassButton(Icons.Filled.KeyboardArrowDown, "Kapat", 42.dp, 26.dp) { close() }
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("ŞİMDİ ÇALIYOR", fontSize = 11.sp, letterSpacing = 2.sp, color = Color.White.copy(alpha = 0.7f))
+                Text("ŞİMDİ ÇALIYOR", fontSize = 11.sp, letterSpacing = 2.sp, color = NpFg.copy(alpha = 0.7f))
                 Text(song?.album ?: if (Engine.audioOnly) "Video (sadece ses)" else "", fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
             }
             var menu by remember { mutableStateOf(false) }
@@ -528,7 +541,7 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
             .graphicsLayer { if (npView != 0) { translationX = swipe.value; alpha = 1f - (kotlin.math.abs(swipe.value) / (size.width * 1.4f)).coerceIn(0f, 0.6f) } },
             contentAlignment = Alignment.Center) {
             if (npView == 1) Column { Box(Modifier.weight(1f)) { LyricsView(lyrics.value.map { -1L to it.second }.filter { it.second.isNotBlank() }, pos) { } }
-                if (lyricsSrc.isNotEmpty()) Text(lyricsSrc, fontSize = 10.sp, color = Color.White.copy(alpha = 0.45f)) }
+                if (lyricsSrc.isNotEmpty()) Text(lyricsSrc, fontSize = 10.sp, color = NpFg.copy(alpha = 0.45f)) }
             else if (npView == 2) VizView(art, tint, NowState.playing)
             else BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 // kapak şeridi: kaydırınca kapaklar birlikte kayar, sıradaki ortaya gelir
@@ -545,54 +558,65 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
                     val k = p.getMediaItemAt(idx).mediaId
                     val sg = Music.byKey(k)
                     val sc = (1f - 0.2f * dist) * (artScale + (1f - artScale) * dist)
-                    Box(Modifier.zIndex(1f - dist).graphicsLayer { translationX = pos * sp; scaleX = sc; scaleY = sc; alpha = 1f - 0.6f * dist }
-                        .size(side).shadow(if (dist < 0.5f) 30.dp else 0.dp, RoundedCornerShape(28.dp)).clip(RoundedCornerShape(28.dp))
+                    val glow = if (look.art == 3) Accent else Color.Black
+                    Box(Modifier.zIndex(1f - dist).graphicsLayer { translationX = pos * sp; scaleX = sc; scaleY = sc; alpha = 1f - 0.6f * dist
+                            if (look.art == 1 && d == 0) rotationZ = spin }
+                        .size(side).shadow(if (dist < 0.5f) (if (look.art == 3) 44.dp else 30.dp) else 0.dp, artShape, ambientColor = glow, spotColor = glow).clip(artShape)
                         .background(Brush.linearGradient(listOf(tint, AccentDeep))), contentAlignment = Alignment.Center) {
                         val b = art
                         if (k == key && b != null) Image(b, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                        else ArtImage(k, sg?.uri, sg?.path ?: k.takeIf { it.startsWith("/") }, Modifier.fillMaxSize(), RoundedCornerShape(28.dp), 640)
+                        else ArtImage(k, sg?.uri, sg?.path ?: k.takeIf { it.startsWith("/") }, Modifier.fillMaxSize(), artShape, 640)
+                        if (look.art == 1) {   // plak ortası
+                            Box(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Color.Transparent, Color.Transparent, Color.Black.copy(alpha = 0.25f)))))
+                            Box(Modifier.size(side * 0.2f).clip(CircleShape).background(Color.Black.copy(alpha = 0.55f)).border(3.dp, Color.White.copy(alpha = 0.35f), CircleShape))
+                            Box(Modifier.size(10.dp).clip(CircleShape).background(Color(0xFF0B0B0E)))
+                        }
                     }
                 }
             }
         }
 
         Row(Modifier.fillMaxWidth().padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(NowState.title, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.basicMarquee())
+            if (look.center) Spacer(Modifier.width(48.dp))
+            Column(Modifier.weight(1f), horizontalAlignment = if (look.center) Alignment.CenterHorizontally else Alignment.Start) {
+                Text(NowState.title, fontSize = if (look.center) 24.sp else 22.sp, fontWeight = if (look.center) FontWeight.Black else FontWeight.Bold, maxLines = 1, modifier = Modifier.basicMarquee())
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    AudioBars(NowState.playing, Color.White.copy(alpha = 0.8f), Modifier.padding(end = 8.dp))
-                    Text(NowState.artist.ifEmpty { "Bilinmeyen sanatçı" }, color = Color.White.copy(alpha = 0.75f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    AudioBars(NowState.playing, NpFg.copy(alpha = 0.8f), Modifier.padding(end = 8.dp))
+                    Text(NowState.artist.ifEmpty { "Bilinmeyen sanatçı" }, color = NpFg.copy(alpha = 0.75f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             IconButton(onClick = { haptic(view); fav = Favs.toggle(key) }) {
-                Icon(if (fav) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, "Favori", tint = if (fav) Color(0xFFFF5C7A) else Color.White, modifier = Modifier.size(28.dp))
+                Icon(if (fav) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, "Favori", tint = if (fav) Color(0xFFFF5C7A) else NpFg, modifier = Modifier.size(28.dp))
             }
         }
 
-        SeekLine(drag ?: if (dur > 0) (pos.toFloat() / dur).coerceIn(0f, 1f) else 0f, Modifier.padding(top = 8.dp),
-            onDrag = { drag = it }, onDone = { f -> Engine.player?.seekTo((f * dur).toLong()); pos = (f * dur).toLong(); drag = null })
+        val sf = drag ?: if (dur > 0) (pos.toFloat() / dur).coerceIn(0f, 1f) else 0f
+        val onSeekDone: (Float) -> Unit = { f -> Engine.player?.seekTo((f * dur).toLong()); pos = (f * dur).toLong(); drag = null }
+        when (look.seek) {
+            3 -> WaveSeek(key, sf, Modifier.padding(top = 8.dp), onDrag = { drag = it }, onDone = onSeekDone)
+            1 -> SeekLine(sf, Modifier.padding(top = 8.dp), active = Accent, track = NpFg.copy(alpha = 0.2f), thick = 7.dp, onDrag = { drag = it }, onDone = onSeekDone)
+            2 -> SeekLine(sf, Modifier.padding(top = 8.dp), active = Accent, track = NpFg.copy(alpha = 0.18f), thick = 2.dp, knob = false, onDrag = { drag = it }, onDone = onSeekDone)
+            else -> SeekLine(sf, Modifier.padding(top = 8.dp), active = NpFg, track = NpFg.copy(alpha = 0.25f), onDrag = { drag = it }, onDone = onSeekDone)
+        }
         Row(Modifier.fillMaxWidth()) {
-            Text(fmtTime(drag?.let { (it * dur).toLong() } ?: pos), fontSize = 12.sp, color = Color.White.copy(alpha = 0.7f))
+            Text(fmtTime(drag?.let { (it * dur).toLong() } ?: pos), fontSize = 12.sp, color = NpFg.copy(alpha = 0.7f))
             Spacer(Modifier.weight(1f))
-            Text("−" + fmtTime((dur - pos).coerceAtLeast(0)), fontSize = 12.sp, color = Color.White.copy(alpha = 0.7f))
+            Text("−" + fmtTime((dur - pos).coerceAtLeast(0)), fontSize = 12.sp, color = NpFg.copy(alpha = 0.7f))
         }
 
         Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { shuffle = !shuffle; Engine.setShuffle(shuffle); Prefs.musicShuffle = shuffle; toast(ctx, if (shuffle) "Karışık: sıra karıştırıldı" else "Karışık kapalı: eski sıra") }) {
-                Icon(Icons.Filled.Shuffle, "Karışık", tint = if (shuffle) Accent else Color.White.copy(alpha = 0.7f))
+                Icon(Icons.Filled.Shuffle, "Karışık", tint = if (shuffle) Accent else NpFg.copy(alpha = 0.7f))
             }
-            GlassButton(Icons.Filled.SkipPrevious, "Önceki", 56.dp, 32.dp) { if (p.currentPosition > 4000) p.seekTo(0) else p.seekToPreviousMediaItem() }
-            Box(Modifier.size(80.dp).clip(CircleShape).background(Color.White).clickable { haptic(view); if (p.isPlaying) p.pause() else { if (p.playbackState == Player.STATE_ENDED) p.seekTo(0); p.play() } },
-                contentAlignment = Alignment.Center) {
-                Icon(if (NowState.playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, "Oynat/Duraklat", tint = Color(0xFF111114), modifier = Modifier.size(46.dp))
-            }
-            GlassButton(Icons.Filled.SkipNext, "Sonraki", 56.dp, 32.dp) { p.seekToNextMediaItem() }
+            SideBtn(look.glass, Icons.Filled.SkipPrevious, "Önceki") { if (p.currentPosition > 4000) p.seekTo(0) else p.seekToPreviousMediaItem() }
+            PlayBtn(look.btn, NowState.playing, 80.dp) { haptic(view); if (p.isPlaying) p.pause() else { if (p.playbackState == Player.STATE_ENDED) p.seekTo(0); p.play() } }
+            SideBtn(look.glass, Icons.Filled.SkipNext, "Sonraki") { p.seekToNextMediaItem() }
             IconButton(onClick = {
                 repeat = when (repeat) { Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL; Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE; else -> Player.REPEAT_MODE_OFF }
                 p.repeatMode = repeat; Prefs.musicRepeat = when (repeat) { Player.REPEAT_MODE_ONE -> 1; Player.REPEAT_MODE_ALL -> 2; else -> 0 }
             }) {
                 Icon(if (repeat == Player.REPEAT_MODE_ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat, "Tekrar",
-                    tint = if (repeat != Player.REPEAT_MODE_OFF) Accent else Color.White.copy(alpha = 0.7f))
+                    tint = if (repeat != Player.REPEAT_MODE_OFF) Accent else NpFg.copy(alpha = 0.7f))
             }
         }
 
@@ -606,6 +630,8 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
             NpTool(Icons.Filled.Equalizer, "Ekolayzer", Prefs.eqOn) { sheet = NpSheet.EQ }
             NpTool(Icons.Filled.SurroundSound, if (Fx.eightD) "8D" else if (Fx.reverb > 0) listOf("", "Oda", "Salon", "Konser")[Fx.reverb] else "Efekt", Fx.on) { sheet = NpSheet.FX }
         }
+    }
+    }
     }
 
     sheet?.let { s ->
@@ -639,10 +665,10 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
 
 @Composable
 private fun NpTool(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, active: Boolean, onClick: () -> Unit) {
-    Row(Modifier.clip(CircleShape).background(if (active) Accent else Color.White.copy(alpha = 0.1f)).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 9.dp),
+    Row(Modifier.clip(CircleShape).background(if (active) Accent else NpFg.copy(alpha = 0.1f)).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, label, tint = Color.White, modifier = Modifier.size(18.dp))
-        Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.White, modifier = Modifier.padding(start = 6.dp))
+        Icon(icon, label, tint = NpFg, modifier = Modifier.size(18.dp))
+        Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = NpFg, modifier = Modifier.padding(start = 6.dp))
     }
 }
 
@@ -650,15 +676,15 @@ private fun NpTool(icon: androidx.compose.ui.graphics.vector.ImageVector, label:
 private fun LyricsView(lines: List<Pair<Long, String>>, pos: Long, seek: (Long) -> Unit) {
     if (lines.isEmpty()) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
-            Icon(Icons.Filled.Lyrics, null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(48.dp))
+            Icon(Icons.Filled.Lyrics, null, tint = NpFg.copy(alpha = 0.5f), modifier = Modifier.size(48.dp))
             Text("Bu şarkı için söz bulunamadı.\nİnternette bulunamadıysa şarkıyla aynı adlı .lrc dosyasını aynı klasöre koyabilirsin.",
-                textAlign = TextAlign.Center, color = Color.White.copy(alpha = 0.7f), modifier = Modifier.padding(top = 10.dp))
+                textAlign = TextAlign.Center, color = NpFg.copy(alpha = 0.7f), modifier = Modifier.padding(top = 10.dp))
         }
         return
     }
     if (lines.first().first < 0) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 24.dp)) {
-            itemsIndexed(lines) { _, (_, s) -> Text(s.ifEmpty { " " }, fontSize = 18.sp, color = Color.White.copy(alpha = 0.85f), lineHeight = 28.sp) }
+            itemsIndexed(lines) { _, (_, s) -> Text(s.ifEmpty { " " }, fontSize = 18.sp, color = NpFg.copy(alpha = 0.85f), lineHeight = 28.sp) }
         }
         return
     }
@@ -669,7 +695,7 @@ private fun LyricsView(lines: List<Pair<Long, String>>, pos: Long, seek: (Long) 
         itemsIndexed(lines) { i, (t, s) ->
             val active = i == cur
             Text(s.ifEmpty { "♪" }, fontSize = if (active) 24.sp else 19.sp, fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-                color = if (active) Color.White else Color.White.copy(alpha = 0.4f), lineHeight = 30.sp,
+                color = if (active) NpFg else NpFg.copy(alpha = 0.4f), lineHeight = 30.sp,
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { seek(t) }.padding(vertical = 8.dp, horizontal = 4.dp))
         }
     }
@@ -733,18 +759,18 @@ private fun NextCard(p: Player, open: () -> Unit) {
     if (ni == C.INDEX_UNSET) return
     val it = p.getMediaItemAt(ni); val s = Music.byKey(it.mediaId)
     val rest = p.mediaItemCount - p.currentMediaItemIndex - 1
-    Column(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 10.dp).clip(RoundedCornerShape(18.dp)).background(Color.White.copy(alpha = 0.08f)).clickable(onClick = open).padding(horizontal = 14.dp, vertical = 10.dp)) {
+    Column(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 10.dp).clip(RoundedCornerShape(18.dp)).background(NpFg.copy(alpha = 0.08f)).clickable(onClick = open).padding(horizontal = 14.dp, vertical = 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("SIRADAKİ", fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp, color = Color.White.copy(alpha = 0.7f), modifier = Modifier.weight(1f))
-            if (rest > 1) Text("$rest şarkı", fontSize = 12.sp, color = Color.White.copy(alpha = 0.7f))
+            Text("SIRADAKİ", fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp, color = NpFg.copy(alpha = 0.7f), modifier = Modifier.weight(1f))
+            if (rest > 1) Text("$rest şarkı", fontSize = 12.sp, color = NpFg.copy(alpha = 0.7f))
         }
         Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             ArtImage(it.mediaId, s?.uri, s?.path ?: it.mediaId.takeIf { k -> k.startsWith("/") }, Modifier.size(38.dp), RoundedCornerShape(9.dp), 128)
             Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
                 Text(it.mediaMetadata.title?.toString() ?: "", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(it.mediaMetadata.artist?.toString() ?: "", fontSize = 12.sp, color = Color.White.copy(alpha = 0.7f), maxLines = 1)
+                Text(it.mediaMetadata.artist?.toString() ?: "", fontSize = 12.sp, color = NpFg.copy(alpha = 0.7f), maxLines = 1)
             }
-            Icon(Icons.AutoMirrored.Filled.QueueMusic, null, tint = Color.White.copy(alpha = 0.7f))
+            Icon(Icons.AutoMirrored.Filled.QueueMusic, null, tint = NpFg.copy(alpha = 0.7f))
         }
     }
 }

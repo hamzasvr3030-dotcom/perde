@@ -201,14 +201,14 @@ fun ActionPill(content: @Composable RowScope.() -> Unit) {
 @Composable
 fun BigHeader(title: String, actions: @Composable RowScope.() -> Unit = {}) {
     Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(start = 18.dp, top = 10.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, fontSize = 34.sp, fontWeight = FontWeight.Black, letterSpacing = (-0.5).sp, modifier = Modifier.weight(1f), maxLines = 1)
+        Text(title, fontSize = (ThemeState.style.titleSize.takeIf { it > 0 } ?: 34).sp, fontWeight = FontWeight(ThemeState.style.titleWeight), letterSpacing = (-0.5).sp, modifier = Modifier.weight(1f), maxLines = 1)
         ActionPill(actions)
     }
 }
 
 @Composable
 fun Pill(text: String, on: Boolean, onClick: () -> Unit) {
-    Text(text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (on) Color.White else Color(0xFFDDDDE3),
+    Text(text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (on) Color.White else Ink.copy(alpha = 0.85f),
         modifier = Modifier.clip(CircleShape).background(if (on) Accent else Surf2).clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 9.dp))
 }
 
@@ -253,7 +253,7 @@ fun ForYouPage(vm: LibVM, go: (Route) -> Unit) {
                             .background(if (i == week.lastIndex) Accent else Accent.copy(alpha = 0.35f)))
                     }
                 }
-                Row(Modifier.fillMaxWidth().padding(top = 4.dp)) { week.forEachIndexed { i, (d, _) -> Text(d.take(3), Modifier.weight(1f), fontSize = 11.sp, color = if (i == week.lastIndex) Color.White else Muted) } }
+                Row(Modifier.fillMaxWidth().padding(top = 4.dp)) { week.forEachIndexed { i, (d, _) -> Text(d.take(3), Modifier.weight(1f), fontSize = 11.sp, color = if (i == week.lastIndex) Ink else Muted) } }
             }
         }
         if (mixes.isNotEmpty()) {

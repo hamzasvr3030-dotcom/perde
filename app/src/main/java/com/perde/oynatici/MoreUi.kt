@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -33,7 +34,7 @@ import kotlinx.coroutines.withContext
 // ============================ Ağ ============================
 @Composable
 private fun NetCard(icon: ImageVector, title: String, sub: String, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Surf).border(1.dp, Color.White.copy(alpha = 0.09f), RoundedCornerShape(22.dp))
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Surf).border(1.dp, Line, RoundedCornerShape(22.dp))
         .pressable(onClick = onClick).padding(horizontal = 18.dp, vertical = 20.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, null, tint = Accent, modifier = Modifier.size(34.dp))
         Column(Modifier.weight(1f).padding(horizontal = 16.dp)) {
@@ -61,7 +62,7 @@ fun NetScreen(go: (Route) -> Unit) {
                     Text("Televizyona yansıtma", fontWeight = FontWeight.Bold, fontSize = 19.sp)
                     Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Filled.Cast, null, tint = Accent, modifier = Modifier.size(40.dp))
-                        Text("Bir video açıp üst çubuktaki yayın simgesine dokun; Chromecast veya Google TV'de oynar.", color = Color.White.copy(alpha = 0.8f),
+                        Text("Bir video açıp üst çubuktaki yayın simgesine dokun; Chromecast veya Google TV'de oynar.", color = Ink.copy(alpha = 0.8f),
                             fontSize = 14.sp, modifier = Modifier.padding(start = 14.dp))
                     }
                 }
@@ -92,7 +93,7 @@ fun MoreScreen(vm: LibVM, go: (Route) -> Unit) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 32.dp)) {
             // profil kartı
             Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp))
-                .background(Brush.linearGradient(listOf(AccentDeep, Surf))).border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(20.dp))
+                .background(Brush.linearGradient(listOf(AccentDeep, Surf))).border(1.dp, Line, RoundedCornerShape(20.dp))
                 .pressable { go(Route.SettingsPage(6)) }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 KLogo(52.dp)
                 Column(Modifier.weight(1f).padding(start = 14.dp)) {
@@ -119,7 +120,7 @@ fun MoreScreen(vm: LibVM, go: (Route) -> Unit) {
                 GroupRow(Icons.Filled.Subtitles, "Altyazı tercihleri", "Boyut, kodlama, online altyazı", last = true) { go(Route.SettingsPage(2)) }
             }
             Group("Görünüm") {
-                GroupRow(Icons.Filled.Palette, "Tema", ThemeState.ACCENTS.getOrNull(ThemeState.accentIdx)?.second + if (ThemeState.amoled) " · OLED" else "") { go(Route.SettingsPage(3)) }
+                GroupRow(Icons.Filled.Palette, "Tema ve arayüz", ThemeState.style.name + (ThemeState.ACCENTS.getOrNull(ThemeState.accentIdx)?.let { " · " + it.second } ?: "") + if (ThemeState.amoled) " · OLED" else "") { go(Route.SettingsPage(3)) }
                 GroupRow(Icons.Filled.ViewAgenda, "Liste ve kart düzeni", last = true) { go(Route.SettingsPage(4)) }
             }
             Group("İndirme") {
@@ -210,12 +211,21 @@ fun SettingsPage(vm: LibVM, section: Int, back: () -> Unit) {
                         Group("İnternet") { OnlineSubSettings() }
                     }
                     3 -> {
+                        Group("Arayüz stili") { StylePicker() }
                         Group("Vurgu rengi") {
-                            Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box(Modifier.size(42.dp).clip(CircleShape).background(Color(ThemeState.style.accent))
+                                        .border(3.dp, if (ThemeState.accentIdx < 0) Ink else Color.Transparent, CircleShape)
+                                        .clickable { ThemeState.accentIdx = -1; Prefs.accent = -1; PerdeWidget.update(ctx) }, contentAlignment = Alignment.Center) {
+                                        if (ThemeState.accentIdx < 0) Icon(Icons.Filled.Check, null, tint = Color.White)
+                                    }
+                                    Text("Stilin", fontSize = 11.sp, color = Muted, modifier = Modifier.padding(top = 4.dp))
+                                }
                                 ThemeState.ACCENTS.forEachIndexed { i, (c, n) ->
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                         Box(Modifier.size(42.dp).clip(CircleShape).background(Color(c))
-                                            .border(3.dp, if (ThemeState.accentIdx == i) Color.White else Color.Transparent, CircleShape)
+                                            .border(3.dp, if (ThemeState.accentIdx == i) Ink else Color.Transparent, CircleShape)
                                             .clickable { ThemeState.accentIdx = i; Prefs.accent = i; PerdeWidget.update(ctx) }, contentAlignment = Alignment.Center) {
                                             if (ThemeState.accentIdx == i) Icon(Icons.Filled.Check, null, tint = Color.White)
                                         }
@@ -225,7 +235,7 @@ fun SettingsPage(vm: LibVM, section: Int, back: () -> Unit) {
                             }
                         }
                         Group("Ekran") {
-                            GroupSwitch(Icons.Filled.Contrast, "Tam siyah tema (OLED)", "OLED ekranlarda pil tasarrufu", Prefs.amoled) { Prefs.amoled = it; ThemeState.amoled = it }
+                            GroupSwitch(Icons.Filled.Contrast, "Tam siyah tema (OLED)", "Koyu stillerde zemin tam siyah olur", Prefs.amoled) { Prefs.amoled = it; ThemeState.amoled = it }
                             GroupSwitch(Icons.Filled.Vibration, "Dokunma titreşimi", "Butonlara basınca hafif titreşim", Prefs.haptics, last = true) { Prefs.haptics = it }
                         }
                     }

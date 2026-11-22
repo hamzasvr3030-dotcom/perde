@@ -442,6 +442,9 @@ private fun PillText(text: String, active: Boolean, onClick: () -> Unit) {
 @Composable
 private fun BigPlay(playing: Boolean, onClick: () -> Unit) {
     val view = LocalView.current
+    // seçili stilin oynat düğmesi (Mavi Gece: eski görünüm)
+    val k = ThemeState.style.play.btn
+    if (k != 0) { PlayBtn(k, playing, 78.dp) { haptic(view); onClick() }; return }
     Box(Modifier.size(78.dp).clip(CircleShape)
         .background(Brush.linearGradient(listOf(AccentSoft, Accent)))
         .border(2.dp, Color.White.copy(alpha = 0.25f), CircleShape)
@@ -533,6 +536,7 @@ private fun SeekBar(a: PlayerActivity) {
                 Text(fmtTime(drag?.let { (it * ui.dur).toLong() } ?: ui.pos), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.width(60.dp))
                 Box(Modifier.weight(1f).padding(horizontal = 8.dp)) {
                     SeekLine(drag ?: frac, active = Accent, track = Color(0x44FFFFFF),
+                        thick = when (ThemeState.style.play.seek) { 1 -> 6.dp; 2 -> 2.dp; else -> 4.dp }, knob = ThemeState.style.play.seek != 2,
                         marks = marks.map { (f, isBm) -> f to (if (isBm) Color(0xFFFFE14D) else Color.White) },
                         onDrag = { drag = it; ui.poke++; a.scrubTo((it * ui.dur).toLong()) },
                         onDone = { a.scrubEnd((it * ui.dur).toLong()); drag = null; ui.poke++ })

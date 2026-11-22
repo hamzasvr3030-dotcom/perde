@@ -11,8 +11,9 @@ object Prefs {
     fun init(c: Context) { sp = c.getSharedPreferences("perde", Context.MODE_PRIVATE) }
 
     // Görünüm
-    var accent by IntP("accent", 0)
+    var accent by IntP("accent", -1)
     var amoled by BoolP("amoled", false)
+    var uiStyle by IntP("uiStyle", 0)
     var haptics by BoolP("haptic", true)
 
     // Kütüphane

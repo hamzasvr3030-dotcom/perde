@@ -63,14 +63,16 @@ val TR: Locale = Locale.forLanguageTag("tr")
 fun Page(title: String, back: (() -> Unit)?, actions: @Composable RowScope.() -> Unit = {}, fab: @Composable () -> Unit = {}, content: @Composable () -> Unit) {
     val sb = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     Scaffold(
-        modifier = Modifier.nestedScroll(sb.nestedScrollConnection),
-        containerColor = Bg, contentWindowInsets = WindowInsets(0, 0, 0, 0), floatingActionButton = fab,
+        modifier = Modifier.background(BgBrush).nestedScroll(sb.nestedScrollConnection),
+        containerColor = Color.Transparent, contentWindowInsets = WindowInsets(0, 0, 0, 0), floatingActionButton = fab,
         topBar = {
+            val st = ThemeState.style
             LargeTopAppBar(
-                title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Black) },
+                title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight(st.titleWeight),
+                    fontSize = if (st.titleSize > 0) st.titleSize.sp else androidx.compose.ui.unit.TextUnit.Unspecified) },
                 navigationIcon = { if (back != null) IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Geri") } },
                 actions = { ActionPill(actions) }, scrollBehavior = sb,
-                colors = TopAppBarDefaults.largeTopAppBarColors(containerColor = Bg, scrolledContainerColor = Surf)
+                colors = TopAppBarDefaults.largeTopAppBarColors(containerColor = Color.Transparent, scrolledContainerColor = Surf)
             )
         }
     ) { pad -> Box(Modifier.padding(pad).fillMaxSize()) { content() } }

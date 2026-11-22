@@ -111,7 +111,7 @@ fun MoreScreen(vm: LibVM, go: (Route) -> Unit) {
                 GroupRow(Icons.Filled.Storage, "Depolama analizi") { go(Route.StorageR) }
                 GroupRow(Icons.Filled.ContentCopy, "Kopya dosyalar") { go(Route.DupR) }
                 GroupRow(Icons.Filled.Favorite, "Favoriler", tint = Color(0xFFFF5C7A)) { go(Route.Favorites) }
-                GroupRow(Icons.AutoMirrored.Filled.PlaylistPlay, "Listeler", last = true) { go(Route.Playlists) }
+                GroupRow(Icons.AutoMirrored.Filled.PlaylistPlay, "Listeler", last = true) { PlNew.music = false; go(Route.Playlists) }
             }
             Group("Oynatıcı") {
                 GroupRow(Icons.Filled.SmartDisplay, "Video oynatıcı ayarları", "Hareketler, kaldığı yer, gece modu") { go(Route.SettingsPage(0)) }

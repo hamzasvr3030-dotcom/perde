@@ -17,29 +17,65 @@ object Favs {
     fun all() = Prefs.set(K)
 }
 
-data class Playlist(val id: Long, val name: String, val items: List<String>)
+/** music: true = müzik listesi, false = video listesi, null = boş/eski liste (iki tarafta da görünür). */
+data class Playlist(val id: Long, val name: String, val items: List<String>, val music: Boolean? = null) {
+    /** Türü kayıtlıysa o, değilse içeriğinden (çoğunluk) çıkarılır. */
+    val isMusic: Boolean? get() = music ?: items.takeIf { it.isNotEmpty() }?.let { l -> l.count { isAudioName(it) } * 2 >= l.size }
+}
 
 /** İzleme / çalma listeleri (video ve şarkı yolları). */
+/** "Listeler" ekranı nereden açıldı: müzik sekmesinden açılınca yeni liste müzik olur. */
+object PlNew { var music = false }
+
 object Playlists {
     fun all(): List<Playlist> = try {
         val a = JSONArray(Prefs.playlists)
-        (0 until a.length()).map { i ->
+        val l = (0 until a.length()).map { i ->
             val o = a.getJSONObject(i); val it = o.getJSONArray("items")
-            Playlist(o.getLong("id"), o.getString("name"), (0 until it.length()).map { j -> it.getString(j) })
+            Playlist(o.getLong("id"), o.getString("name"), (0 until it.length()).map { j -> it.getString(j) },
+                if (o.has("m")) o.getBoolean("m") else null)
         }
+        // eski karışık listeleri bir kez ayır: şarkılar bu listede kalır, videolar "Ad (video)" listesine taşınır
+        if (l.any { it.music == null && it.items.isNotEmpty() }) split(l) else l
     } catch (_: Exception) { emptyList() }
+
+    private fun split(l: List<Playlist>): List<Playlist> {
+        val out = ArrayList<Playlist>(); var n = 0L
+        l.forEach { p ->
+            if (p.music != null || p.items.isEmpty()) { out += p; return@forEach }
+            val (aud, vid) = p.items.partition { isAudioName(it) }
+            when {
+                vid.isEmpty() -> out += p.copy(music = true)
+                aud.isEmpty() -> out += p.copy(music = false)
+                else -> { out += p.copy(items = aud, music = true); out += Playlist(System.currentTimeMillis() + (++n), "${p.name} (video)", vid, false) }
+            }
+        }
+        save(out); return out
+    }
+
+    fun videos() = all().filter { it.isMusic != true }
+    fun music() = all().filter { it.isMusic != false }
+    /** Eklenen öğelere uygun listeler (şarkı eklerken video listeleri çıkmaz). */
+    fun forKeys(keys: List<String>): List<Playlist> = when {
+        keys.isNotEmpty() && keys.all { isAudioName(it) } -> music()
+        keys.isNotEmpty() && keys.none { isAudioName(it) } -> videos()
+        else -> all()
+    }
 
     private fun save(l: List<Playlist>) {
         val a = JSONArray()
-        l.forEach { p -> a.put(JSONObject().put("id", p.id).put("name", p.name).put("items", JSONArray(p.items))) }
+        l.forEach { p -> a.put(JSONObject().put("id", p.id).put("name", p.name).put("items", JSONArray(p.items)).apply { p.music?.let { put("m", it) } }) }
         Prefs.playlists = a.toString()
     }
     fun get(id: Long) = all().firstOrNull { it.id == id }
-    fun create(name: String, items: List<String> = emptyList()): Playlist {
-        val p = Playlist(System.currentTimeMillis(), name.ifBlank { "Yeni liste" }, items.distinct())
+    fun create(name: String, items: List<String> = emptyList(), music: Boolean? = null): Playlist {
+        val p = Playlist(System.currentTimeMillis(), name.ifBlank { "Yeni liste" }, items.distinct(),
+            music ?: items.takeIf { it.isNotEmpty() }?.let { l -> l.count { isAudioName(it) } * 2 >= l.size })
         save(all() + p); return p
     }
-    fun add(id: Long, keys: List<String>) = save(all().map { if (it.id == id) it.copy(items = (it.items + keys).distinct()) else it })
+    fun add(id: Long, keys: List<String>) = save(all().map {
+        if (it.id == id) it.copy(items = (it.items + keys).distinct(), music = it.music ?: keys.takeIf { k -> k.isNotEmpty() }?.all { k -> isAudioName(k) }) else it
+    })
     fun setItems(id: Long, items: List<String>) = save(all().map { if (it.id == id) it.copy(items = items) else it })
     fun remove(id: Long, key: String) = save(all().map { if (it.id == id) it.copy(items = it.items - key) else it })
     fun move(id: Long, from: Int, to: Int) = save(all().map {

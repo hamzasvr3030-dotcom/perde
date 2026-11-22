@@ -276,7 +276,7 @@ object Dl {
     /** Liste/kanal: aynı adla çalma/izleme listesi oluşturur, kendi klasörüne indirir. */
     fun addList(ctx: Context, title: String, entries: List<Web.Entry>, opts: DlOpts, follow: Boolean, sourceUrl: String, allIds: List<String>, existingPlaylist: Long? = null, startIndex: Int = 0, at: Long = 0L): DlGroup {
         init(ctx)
-        val pid = existingPlaylist ?: Playlists.create(title).id
+        val pid = existingPlaylist ?: Playlists.create(title, music = opts.audio).id
         val g = DlGroup("g${System.nanoTime()}", title, opts.audio, pid, entries.size)
         groups.add(0, g)
         val dir = outDir(opts.audio, title).absolutePath
@@ -382,7 +382,7 @@ object Dl {
                 notifyDone(c, "İndirildi", j.title, j.file)
                 val f = j.file
                 if (f != null && j.opts.audio && DlPrefs.audioToList && !j.url.startsWith("file:")) {
-                    val pl = Playlists.all().firstOrNull { it.name == "İndirilenler" } ?: Playlists.create("İndirilenler")
+                    val pl = Playlists.all().firstOrNull { it.name == "İndirilenler" && it.music != false } ?: Playlists.create("İndirilenler", music = true)
                     Playlists.setItems(pl.id, (listOf(f) + (Playlists.get(pl.id)?.items ?: emptyList())).distinct())
                 }
                 if (f != null && DlPrefs.playWhenDone && Fg.visible && jobs.none { it.active && it !== j }) android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ AppState.playFile = f }, 1500)
@@ -394,11 +394,11 @@ object Dl {
     }
 
     /** Daha önce indirilip hâlâ telefonda duran dosya (bağlantıya göre). */
-    fun existing(url: String): String? {
+    fun existing(url: String, audio: Boolean? = null): String? {
         val id = Web.idOf(url)
         return (jobs.filter { it.state == Job.DONE || it.state == Job.SKIP }.mapNotNull { j -> j.file?.takeIf { j.url == url || (id != null && Web.idOf(j.url) == id) } } +
             history.filter { it.ok && it.file != null && (it.url == url || (id != null && it.key == id)) }.mapNotNull { it.file })
-            .firstOrNull { File(it).exists() }
+            .firstOrNull { File(it).exists() && (audio == null || isAudioName(it) == audio) }   // video varken şarkı istendiyse "var" sayma
     }
 
     private fun notifyDone(c: Context, title: String, text: String, file: String? = null) {
@@ -639,11 +639,11 @@ object Dl {
 
             when {
                 "has already been recorded in the archive" in out -> {
-                    val have = existing(j.url)
+                    val have = existing(j.url, j.opts.audio)
                     if (have == null && useArchive && attempt < 5) {
                         // Arşivde kayıtlı ama dosya silinmiş: kaydı arşivden çıkar ve yeniden indir
                         forgetArchived(c, j.url); useArchive = false
-                        j.phase = "Daha önce silinmiş, yeniden indiriliyor…"
+                        j.phase = "Telefonda yok, yeniden indiriliyor…"
                         Report.log("indirme", "${j.url} → arşivde vardı ama dosya yok, yeniden indiriliyor"); continue
                     }
                     j.state = Job.SKIP; j.progress = 1f; j.file = have

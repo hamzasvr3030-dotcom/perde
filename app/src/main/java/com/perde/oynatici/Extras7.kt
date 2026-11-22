@@ -178,7 +178,11 @@ object SongMatch {
 
     /** Listede telefonda olmayanların id'leri. Şarkılar bir kez normalize edilir (her öğe için tekrar regex çalışmaz). */
     fun missing(songs: List<Song>, entries: List<Web.Entry>): List<String> {
-        val idx = songs.mapNotNull { s -> norm(s.title).takeIf { it.length >= 3 }?.let { " $it " to artistNorm(s.artist).substringBefore(' ') } }.distinct()
+        // sanatçısı bilinmeyen şarkıda kısa başlık ("aşk", "intro") her şeye uymasın: en az iki kelime ya da 8 harf
+        val idx = songs.mapNotNull { s ->
+            val t = norm(s.title); val a = artistNorm(s.artist).substringBefore(' ')
+            t.takeIf { it.length >= 3 && (a.isNotEmpty() || ' ' in it || it.length >= 8) }?.let { " $it " to a }
+        }.distinct()
         return entries.filter { en ->
             val e = " " + norm(en.title) + " " + norm(en.uploader) + " "
             idx.none { (t, a) -> e.contains(t) && (a.isEmpty() || e.contains(" $a")) }

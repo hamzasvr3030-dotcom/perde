@@ -230,7 +230,7 @@ fun MusicScreen(vm: LibVM, go: (Route) -> Unit) {
                     }
                 }
                 else -> {
-                    val lists = remember(vm.ver) { Playlists.all() }
+                    val lists = remember(vm.ver) { Playlists.music() }
                     LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
                         item { Text("Akıllı listeler", color = Accent, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp)) }
                         items(SmartLists.NAMES.size) { t ->
@@ -248,7 +248,7 @@ fun MusicScreen(vm: LibVM, go: (Route) -> Unit) {
                                 leadingContent = { Icon(Icons.AutoMirrored.Filled.QueueMusic, null, tint = Accent) },
                                 modifier = Modifier.clickable { go(Route.PlaylistR(p.id)) }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
                         }
-                        item { TextButton(onClick = { go(Route.Playlists) }, modifier = Modifier.padding(16.dp)) { Icon(Icons.Filled.Add, null); Text("Yeni liste / tüm listeler") } }
+                        item { TextButton(onClick = { PlNew.music = true; go(Route.Playlists) }, modifier = Modifier.padding(16.dp)) { Icon(Icons.Filled.Add, null); Text("Yeni liste / tüm listeler") } }
                     }
                 }
             }

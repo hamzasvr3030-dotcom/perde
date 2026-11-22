@@ -63,7 +63,7 @@ object Prefs {
     var musicBoost by IntP("musicBoost", 0)
     var resumeMusic by BoolP("resumeMusic", true)
     var fetchCovers by BoolP("fetchCovers", true)
-    var coverAccent by BoolP("coverAccent", true)
+    var coverAccent by BoolP("coverAccent", false)   // kapalı: seçilen tema rengi korunur
     var folderNext by BoolP("folderNext", true)
     var rememberView by BoolP("rememberView", true)   // müzikte %100 üstü ek ses (0–100)
 

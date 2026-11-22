@@ -208,7 +208,7 @@ fun HomeScreen(vm: LibVM, go: (Route) -> Unit) {
         val recent = remember(vm.videos, vm.ver) { vm.videos.filter { Prefs.playedAt(it.key) > 0 }.sortedByDescending { Prefs.playedAt(it.key) }.take(12) }
         val newest = remember(vm.videos, vm.ver) { vm.videos.sortedByDescending { it.dateAdded }.take(15) }
         val favs = remember(vm.videos, vm.ver) { val f = Favs.all(); vm.videos.filter { it.key in f } }
-        val lists = remember(vm.ver) { Playlists.all() }
+        val lists = remember(vm.ver) { Playlists.videos() }
         Box(Modifier.padding(pad).fillMaxSize()) {
             if (vm.videos.isEmpty()) {
                 if (vm.loading) CircularProgressIndicator(Modifier.align(Alignment.Center), color = Accent)
@@ -249,14 +249,14 @@ fun HomeScreen(vm: LibVM, go: (Route) -> Unit) {
                         }
                     }
                 }
-                item { SectionHeader("Listeler", "Tümü") { go(Route.Playlists) } }
+                item { SectionHeader("Listeler", "Tümü") { PlNew.music = false; go(Route.Playlists) } }
                 item {
                     LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         item { AssistChip(onClick = { go(Route.Favorites) }, label = { Text("Favoriler") }, leadingIcon = { Icon(Icons.Filled.Favorite, null, tint = Color(0xFFFF5C7A)) }) }
                         items(lists, key = { it.id }) { p ->
                             AssistChip(onClick = { go(Route.PlaylistR(p.id)) }, label = { Text("${p.name} (${p.items.size})") }, leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null) })
                         }
-                        item { AssistChip(onClick = { go(Route.Playlists) }, label = { Text("Yeni liste") }, leadingIcon = { Icon(Icons.Filled.Add, null) }) }
+                        item { AssistChip(onClick = { PlNew.music = false; go(Route.Playlists) }, label = { Text("Yeni liste") }, leadingIcon = { Icon(Icons.Filled.Add, null) }) }
                     }
                 }
                 item { SectionHeader("Klasörler (${folders.size})") }
@@ -523,9 +523,9 @@ fun FolderPickerDialog(vm: LibVM, title: String, dismiss: () -> Unit, pick: (Fil
 /** Listeye ekleme içeriği (alt sayfa veya pencere içinde). */
 @Composable
 fun PlaylistPickerContent(keys: List<String>, done: (String) -> Unit) {
-    var lists by remember { mutableStateOf(Playlists.all()) }
+    var lists by remember { mutableStateOf(Playlists.forKeys(keys)) }
     var name by remember { mutableStateOf("") }
-    SheetTitle("Listeye ekle")
+    SheetTitle(if (keys.isNotEmpty() && keys.all { isAudioName(it) }) "Müzik listesine ekle" else if (keys.none { isAudioName(it) }) "Video listesine ekle" else "Listeye ekle")
     Row(verticalAlignment = Alignment.CenterVertically) {
         OutlinedTextField(name, { name = it }, singleLine = true, label = { Text("Yeni liste adı") }, modifier = Modifier.weight(1f))
         IconButton(enabled = name.isNotBlank(), onClick = { Playlists.create(name.trim(), keys); done("\"${name.trim()}\" listesi oluşturuldu") }) { Icon(Icons.Filled.Add, "Oluştur") }
@@ -535,7 +535,7 @@ fun PlaylistPickerContent(keys: List<String>, done: (String) -> Unit) {
     lists.forEach { p ->
         ListItem(headlineContent = { Text(p.name) }, supportingContent = { Text("${p.items.size} öğe") },
             leadingContent = { Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null, tint = Accent) },
-            modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable { Playlists.add(p.id, keys); lists = Playlists.all(); done("\"${p.name}\" listesine eklendi") },
+            modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable { Playlists.add(p.id, keys); lists = Playlists.forKeys(keys); done("\"${p.name}\" listesine eklendi") },
             colors = ListItemDefaults.colors(containerColor = Color.Transparent))
     }
 }
@@ -694,18 +694,34 @@ fun PlaylistsScreen(vm: LibVM, go: (Route) -> Unit, back: () -> Unit) {
                 ListItem(headlineContent = { Text("Favoriler") }, leadingContent = { PlaylistIcon(Icons.Filled.Favorite) },
                     modifier = Modifier.clickable { go(Route.Favorites) }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
             }
-            items(lists, key = { it.id }) { p ->
-                ListItem(headlineContent = { Text(p.name, fontWeight = FontWeight.Medium) }, supportingContent = { Text("${p.items.size} öğe") },
-                    leadingContent = { PlaylistIcon(Icons.AutoMirrored.Filled.PlaylistPlay) },
-                    modifier = Modifier.clickable { go(Route.PlaylistR(p.id)) }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
+            // video ve müzik listeleri ayrı bölümlerde
+            listOf(false to "Video listeleri", true to "Müzik listeleri").forEach { (mus, head) ->
+                val part = lists.filter { (it.isMusic ?: PlNew.music) == mus }
+                if (part.isNotEmpty()) {
+                    item(key = "h$mus") { Text(head, color = Accent, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 16.dp, top = 14.dp, bottom = 4.dp)) }
+                    items(part, key = { it.id }) { p ->
+                        ListItem(headlineContent = { Text(p.name, fontWeight = FontWeight.Medium) }, supportingContent = { Text("${p.items.size} ${if (mus) "şarkı" else "video"}") },
+                            leadingContent = { PlaylistIcon(if (mus) Icons.Filled.QueueMusic else Icons.AutoMirrored.Filled.PlaylistPlay) },
+                            modifier = Modifier.clickable { go(Route.PlaylistR(p.id)) }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
+                    }
+                }
             }
         }
     }
     if (creating) {
         var name by remember { mutableStateOf("") }
+        var mus by remember { mutableStateOf(PlNew.music) }
         AlertDialog(onDismissRequest = { creating = false }, title = { Text("Yeni liste") },
-            text = { OutlinedTextField(name, { name = it }, singleLine = true, label = { Text("Liste adı") }) },
-            confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = { Playlists.create(name.trim()); lists = Playlists.all(); creating = false }) { Text("Oluştur") } },
+            text = {
+                Column {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 10.dp)) {
+                        FilterChip(!mus, { mus = false }, { Text("Video listesi") })
+                        FilterChip(mus, { mus = true }, { Text("Müzik listesi") })
+                    }
+                    OutlinedTextField(name, { name = it }, singleLine = true, label = { Text("Liste adı") })
+                }
+            },
+            confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = { Playlists.create(name.trim(), music = mus); lists = Playlists.all(); creating = false }) { Text("Oluştur") } },
             dismissButton = { TextButton(onClick = { creating = false }) { Text("Vazgeç") } })
     }
 }

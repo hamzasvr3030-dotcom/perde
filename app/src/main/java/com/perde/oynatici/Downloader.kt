@@ -459,17 +459,26 @@ object Dl {
             j.phase += " · YouTube yavaşlatıyor"
     }
 
+    /** "görüntü ses birleşik" satırı: ikisi varsa toplamı, yoksa birleşik değer. */
+    internal fun parsePrinted(f: File): Long = try {
+        val n = f.readText().trim().lines().lastOrNull()?.trim()?.split(' ')?.filter { it.isNotEmpty() }?.map { it.toDoubleOrNull()?.toLong() ?: 0L } ?: emptyList()
+        val parts = n.getOrElse(0) { 0L } + n.getOrElse(1) { 0L }
+        if (n.size >= 3) (if (parts > 0) maxOf(parts, n[2]) else n[2]) else n.firstOrNull() ?: 0L
+    } catch (_: Exception) { 0L }
+
     private fun dirSize(f: File): Long = if (f.isFile) f.length() else (f.listFiles() ?: emptyArray()).sumOf { dirSize(it) }
 
     /** Asıl ilerleme: geçici klasörde diskte gerçekten inen bayt ÷ yt-dlp'nin bildirdiği toplam. */
     private fun startDiskWatch(j: Job, tmp: File, sizeFile: File): () -> Unit {
         val run = java.util.concurrent.atomic.AtomicBoolean(true)
         Thread {
-            var lastGot = 0L; var lastT = System.currentTimeMillis()
+            var lastGot = 0L; var lastT = System.currentTimeMillis(); var printed = 0L
             while (run.get()) {
-                if (j.expected <= 0) j.expected = (try { sizeFile.readText().trim().lines().lastOrNull()?.trim()?.toLongOrNull() ?: 0L } catch (_: Exception) { 0L })
-                    // yt-dlp bazen sadece görüntünün boyutunu bildirir: analizdeki görüntü + ses toplamı daha büyükse onu kullan
-                    .let { e -> if (e > 0 && j.hint > e && j.hint < e * 2.5) j.hint else e }
+                if (printed <= 0) printed = parsePrinted(sizeFile)
+                // beklenen toplam: yt-dlp'nin bildirdiği, analizdeki görüntü + ses ve o an inen dosyanın satırdaki boyutundan en büyüğü
+                // (biri eksik/yanlışsa 129/129 MB'de takılı kalmasın)
+                val live = j.doneBytes + maxOf(j.curSize, j.curMax)
+                if (printed > 0 || live > 0) j.expected = maxOf(printed, j.hint.takeIf { printed > 0 } ?: 0L, live)
                 val e = j.expected
                 if (e > 0) {
                     val got = dirSize(tmp)
@@ -516,7 +525,10 @@ object Dl {
         if (DlPrefs.archive && !local) r.addOption("--download-archive", archiveFile(c).absolutePath)
         if (safe) r.addOption("--cache-dir", File(c.filesDir, "ytdlp-cache").absolutePath) else Web.addCookies(c, r)
         r.addCommands(listOf("--print-to-file", "after_move:filepath", pathFile.absolutePath))
-        r.addCommands(listOf("--print-to-file", "before_dl:%(filesize,filesize_approx)s", sizeFile(c, j).absolutePath))
+        // görüntü ve ses boyutu ayrı ayrı (birleşik "filesize" bazen sadece sesin boyutunu veriyordu)
+        r.addCommands(listOf("--print-to-file",
+            "before_dl:%(requested_formats.0.filesize,requested_formats.0.filesize_approx|0)s %(requested_formats.1.filesize,requested_formats.1.filesize_approx|0)s %(filesize,filesize_approx|0)s",
+            sizeFile(c, j).absolutePath))
         // geçici dosyalar ayrı klasörde: ilerleme diskte inen bayttan ölçülür
         r.addOption("-P", "home:" + j.dir); r.addOption("-P", "temp:" + tmpDir(c, j).apply { mkdirs() }.absolutePath)
         if (o.audio) {

@@ -20,7 +20,8 @@ class PlaybackService : MediaSessionService() {
             Intent(this, PlayerActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-        return MediaSession.Builder(this, p).setSessionActivity(pi).build()
+        return MediaSession.Builder(this, p).setSessionActivity(pi)
+            .setBitmapLoader(androidx.media3.session.CacheBitmapLoader(ArtBitmapLoader(this))).build()
     }
 
     override fun onCreate() {

@@ -145,7 +145,7 @@ fun PlayerScreen(a: PlayerActivity) {
 
         if (ui.buffering && !ui.inPip) CircularProgressIndicator(Modifier.align(Alignment.Center).size(56.dp), color = Accent, strokeWidth = 4.dp)
 
-        ui.ind?.let { IndicatorView(it, if (it.kind == "seek") ui.thumb else null, Modifier.align(Alignment.Center)) }
+        ui.ind?.let { if (it.kind == "fast") FastPill(Modifier.align(Alignment.TopCenter)) else IndicatorView(it, if (it.kind == "seek") ui.thumb else null, Modifier.align(Alignment.Center)) }
 
         AnimatedVisibility(ui.showControls && !ui.locked && !ui.inPip && ui.countdown == null, enter = fadeIn(), exit = fadeOut()) { Controls(a) }
 
@@ -531,20 +531,11 @@ private fun SeekBar(a: PlayerActivity) {
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(fmtTime(drag?.let { (it * ui.dur).toLong() } ?: ui.pos), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.width(60.dp))
-                Box(Modifier.weight(1f)) {
-                    Slider(
-                        value = drag ?: frac,
-                        onValueChange = { drag = it; ui.poke++; a.requestThumb((it * ui.dur).toLong()) },
-                        onValueChangeFinished = { drag?.let { a.seekTo((it * ui.dur).toLong()) }; drag = null; a.requestThumb(null) },
-                        colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Accent, inactiveTrackColor = Color(0x44FFFFFF))
-                    )
-                    if (marks.isNotEmpty()) Canvas(Modifier.matchParentSize()) {
-                        val pad = 10.dp.toPx(); val y = size.height / 2
-                        marks.forEach { (f, isBm) ->
-                            val x = pad + (size.width - 2 * pad) * f
-                            drawCircle(if (isBm) Color(0xFFFFE14D) else Color.White, radius = if (isBm) 3.5.dp.toPx() else 2.dp.toPx(), center = Offset(x, y - 9.dp.toPx()))
-                        }
-                    }
+                Box(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                    SeekLine(drag ?: frac, active = Accent, track = Color(0x44FFFFFF),
+                        marks = marks.map { (f, isBm) -> f to (if (isBm) Color(0xFFFFE14D) else Color.White) },
+                        onDrag = { drag = it; ui.poke++; a.scrubTo((it * ui.dur).toLong()) },
+                        onDone = { a.scrubEnd((it * ui.dur).toLong()); drag = null; ui.poke++ })
                 }
                 Text(fmtTime(ui.dur), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.End, modifier = Modifier.width(60.dp))
             }
@@ -985,5 +976,16 @@ private fun IntroSheet(a: PlayerActivity) {
     Row(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Button(onClick = { a.saveIntro(s, e); ui.sheet = null; a.toast("Giriş ${fmtTime(s)}–${fmtTime(e)} bu klasörde atlanacak") }, enabled = e > s, modifier = Modifier.weight(1f)) { Text("Kaydet") }
         if (saved != null) OutlinedButton(onClick = { a.saveIntro(0, 0); ui.sheet = null; a.toast("Giriş atlama kapatıldı") }, modifier = Modifier.weight(1f)) { Text("Kaldır") }
+    }
+}
+
+
+/** Basılı tutunca: üstte küçük, yarı saydam "2×" etiketi (görüntüyü kapatmaz). */
+@Composable
+private fun FastPill(m: Modifier) {
+    Row(m.windowInsetsPadding(WindowInsets.statusBars).padding(top = 14.dp).clip(CircleShape).background(Color(0x55000000))
+        .padding(horizontal = 12.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Filled.FastForward, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(15.dp))
+        Text(" 2×", color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
     }
 }

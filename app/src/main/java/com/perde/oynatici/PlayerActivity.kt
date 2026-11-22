@@ -199,8 +199,12 @@ class PlayerActivity : AppCompatActivity() {
         override fun onReceive(c: Context?, i: Intent?) { togglePlay() }
     }
 
+    /** Bu oynatıcı hâlâ bu ekranın videosunu mu çalıyor? (müzik başlatıldıysa bu ekran karışmamalı) */
+    private fun mine(): Boolean = Engine.player === player && player.currentMediaItem?.mediaMetadata?.mediaType != androidx.media3.common.MediaMetadata.MEDIA_TYPE_MUSIC
+
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (!mine()) return
             ui.playing = isPlaying
             if (isPlaying) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -213,6 +217,7 @@ class PlayerActivity : AppCompatActivity() {
             applyOrientation(); updatePip()
         }
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            if (!mine()) { if (!isResumed()) { player.removeListener(this); finish() }; return }   // müzik başladı: arka plandaki video ekranı kapanır
             ui.title = mediaItem?.mediaMetadata?.title?.toString() ?: ""
             ui.zoom = 1f; ui.pan = Offset.Zero; ui.error = null; ui.countdown = null; countJob?.cancel()
             Engine.abA = -1; Engine.abB = -1; ui.abA = -1; ui.abB = -1
@@ -232,6 +237,7 @@ class PlayerActivity : AppCompatActivity() {
             if (playbackState == Player.STATE_ENDED) { ui.showControls = true; ui.poke++ }
         }
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            if (!mine()) return
             if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM) onItemEnded()
         }
         override fun onPlaybackParametersChanged(p: androidx.media3.common.PlaybackParameters) { if (!longPressing) ui.speed = p.speed }
@@ -581,6 +587,23 @@ class PlayerActivity : AppCompatActivity() {
         ui.poke++
     }
 
+    private fun isResumed() = lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+
+    // ---- çubuktan sürükleyerek sarma: görüntü canlı güncellenir ----
+    private var lastScrub = 0L
+    fun scrubTo(ms: Long) {
+        if (ui.casting) return
+        if (!player.isScrubbingModeEnabled) player.setScrubbingModeEnabled(true)
+        val now = SystemClock.uptimeMillis()
+        if (now - lastScrub > 80) { lastScrub = now; player.seekTo(ms) }
+    }
+    fun scrubEnd(ms: Long) {
+        if (ui.casting) { seekTo(ms); return }
+        player.setScrubbingModeEnabled(false)
+        player.setSeekParameters(Engine.FAST_SEEK)
+        player.seekTo(ms)
+    }
+
     fun seekBy(ms: Long) {
         if (ui.casting) { castSession?.remoteMediaClient?.let { it.seek(MediaSeekOptions.Builder().setPosition(it.approximateStreamPosition + ms).build()) }; return }
         player.seekTo((player.currentPosition + ms).coerceIn(0, maxOf(0, player.duration)))
@@ -816,7 +839,7 @@ class PlayerActivity : AppCompatActivity() {
     }
     fun seekDragEnd() {
         if (ui.casting) return
-        player.setSeekParameters(SeekParameters.EXACT)
+        player.setSeekParameters(Engine.FAST_SEEK)
         seekPreview?.let { player.seekTo(it) }
         seekPreview = null; requestThumb(null)
         showInd(ui.ind, 500)

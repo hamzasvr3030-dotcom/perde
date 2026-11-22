@@ -407,7 +407,7 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
     var shuffle by remember { mutableStateOf(Engine.shuffled) }
     var fav by remember(key) { mutableStateOf(Favs.has(key)) }
     var sleepLabel by remember { mutableStateOf("") }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(p) {
         while (true) {
             pos = p.currentPosition; dur = p.duration.takeIf { it != C.TIME_UNSET } ?: 0
             sleepLabel = when { Engine.sleepAt > 0 -> fmtTime(Engine.sleepAt - SystemClock.elapsedRealtime()); Engine.sleepEnd -> "şarkı sonu"; else -> "" }
@@ -478,7 +478,7 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
             else if (swipe.value != 0f && !swipe.isRunning) swipe.snapTo(0f)
         }
         Box(Modifier.weight(1f).fillMaxWidth()
-            .pointerInput(Unit) {
+            .pointerInput(p, npView) {
                 val w = size.width.toFloat()
                 detectHorizontalDragGestures(
                     onDragEnd = {
@@ -544,10 +544,8 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
             }
         }
 
-        Slider(value = drag ?: if (dur > 0) (pos.toFloat() / dur).coerceIn(0f, 1f) else 0f,
-            onValueChange = { drag = it }, onValueChangeFinished = { drag?.let { p.seekTo((it * dur).toLong()) }; drag = null },
-            colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(alpha = 0.25f)),
-            modifier = Modifier.padding(top = 8.dp))
+        SeekLine(drag ?: if (dur > 0) (pos.toFloat() / dur).coerceIn(0f, 1f) else 0f, Modifier.padding(top = 8.dp),
+            onDrag = { drag = it }, onDone = { f -> Engine.player?.seekTo((f * dur).toLong()); pos = (f * dur).toLong(); drag = null })
         Row(Modifier.fillMaxWidth()) {
             Text(fmtTime(drag?.let { (it * dur).toLong() } ?: pos), fontSize = 12.sp, color = Color.White.copy(alpha = 0.7f))
             Spacer(Modifier.weight(1f))

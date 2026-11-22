@@ -106,7 +106,7 @@ private fun ShortsScreen(a: ShortsActivity) {
             try {
                 items = if (source == 1) Library.cache.filter { it.height > it.width && it.duration in 1..180_000 }.sortedByDescending { it.dateAdded }
                     .map { ShortItem(it.path, it.title, null, null, true) }
-                else Web.search(a, "#shorts " + query.ifBlank { "türkiye" }, 30).filter { it.durationSec in 0..180 }
+                else Web.search(a, "#shorts " + query.ifBlank { "türkiye" }, 30).filter { it.durationSec in 1..180 }
                     .map { ShortItem(if ("/shorts/" in it.url || it.url.contains("watch")) it.url else "https://www.youtube.com/shorts/${it.id}", it.title, it.uploader, it.thumb, false) }
                 if (items.isEmpty()) err = if (source == 1) "Telefonda dikey kısa video bulunamadı." else "Sonuç bulunamadı."
             } catch (e: Exception) { err = Web.explain(e) }

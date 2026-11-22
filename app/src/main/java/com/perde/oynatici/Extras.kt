@@ -145,6 +145,7 @@ class PerdeWidget : AppWidgetProvider() {
     companion object {
         const val TOGGLE = "com.perde.oynatici.W_TOGGLE"
         const val NEXT = "com.perde.oynatici.W_NEXT"
+        const val PREV = "com.perde.oynatici.W_PREV"
 
         fun update(ctx: Context) {
             try {
@@ -182,6 +183,7 @@ class PerdeWidget : AppWidgetProvider() {
                 v.setOnClickPendingIntent(R.id.w_play, PendingIntent.getActivity(ctx, 4, i, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
             } else v.setOnClickPendingIntent(R.id.w_play, open)
             v.setOnClickPendingIntent(R.id.w_next, bc(ctx, NEXT, 2))
+            v.setOnClickPendingIntent(R.id.w_prev, bc(ctx, PREV, 5))
             return v
         }
     }
@@ -196,6 +198,7 @@ class PerdeWidget : AppWidgetProvider() {
         when (intent.action) {
             TOGGLE -> if (p != null && p.mediaItemCount > 0) { if (p.isPlaying) p.pause() else p.play() }
             NEXT -> if (p != null && p.hasNextMediaItem()) p.seekToNextMediaItem()
+            PREV -> if (p != null && p.mediaItemCount > 0) { if (p.currentPosition > 4000 || !p.hasPreviousMediaItem()) p.seekTo(0) else p.seekToPreviousMediaItem() }
         }
         update(context)
     }

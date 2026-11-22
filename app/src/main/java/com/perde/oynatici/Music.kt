@@ -78,7 +78,7 @@ object Music {
 
     fun item(s: Song): MediaItem = MediaItem.Builder().setUri(Uri.fromFile(File(s.path))).setMediaId(s.key)
         .setMediaMetadata(MediaMetadata.Builder().setTitle(s.title).setArtist(s.artist).setAlbumTitle(s.album)
-            .setArtworkUri(s.artUri).setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC).build()).build()
+            .kadrajArt(s.key).setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC).build()).build()
 }
 
 /** Albüm kapağı yükleyici (önbellekli). */

@@ -143,6 +143,7 @@ object Engine {
         if (item.mediaMetadata.mediaType != androidx.media3.common.MediaMetadata.MEDIA_TYPE_MUSIC) {
             if (musicBoostOn) { setBoost(0); musicBoostOn = false }   // müzik yükseltmesi videoya taşmasın
             fx.enabled = false
+            if (lastMusicKey != null) { lastMusicKey = null; ThemeState.dyn = null }   // müziğe dönünce kapak rengi yeniden hesaplansın
             return
         }
         applyMusicBoost()
@@ -198,13 +199,16 @@ object Engine {
         rf.setEnableDecoderFallback(true)
         builtSw = Prefs.decoderSw
 
-        val p = ExoPlayer.Builder(app, rf)
+        // 30 sn geri arabellek: geri sarma anında olsun
+        val lc = androidx.media3.exoplayer.DefaultLoadControl.Builder().setBackBuffer(30_000, true).build()
+        val p = ExoPlayer.Builder(app, rf).setLoadControl(lc)
             .setMediaSourceFactory(DefaultMediaSourceFactory(AnyDataSource.Factory(app)))
             .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
         p.skipSilenceEnabled = false
+        p.setSeekParameters(FAST_SEEK)
         p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
             .setPreferredTextLanguage("tr").setPreferredAudioLanguage("tr")
             .setSelectUndeterminedTextLanguage(true).build()
@@ -245,6 +249,9 @@ object Engine {
         handler.removeCallbacks(ticker); handler.post(ticker)
         return p
     }
+
+    /** Hedefe en çok 1,5 sn uzaklıktaki anahtar kareye atlar: ileri/geri sarma takılmaz. */
+    val FAST_SEEK = androidx.media3.exoplayer.SeekParameters(1_500_000L, 1_500_000L)
 
     fun savePos() {
         val p = player ?: return
@@ -365,7 +372,7 @@ object Engine {
         releaseEffects()
         player?.release()
         player = null
-        abA = -1; abB = -1; sleepAt = 0; sleepEnd = false; audioOnly = false; ThemeState.dyn = null
+        abA = -1; abB = -1; sleepAt = 0; sleepEnd = false; audioOnly = false; ThemeState.dyn = null; lastMusicKey = null
         delay.delayMs = 0
         NowState.refresh(); appCtx?.let { PerdeWidget.update(it); MusicWidget.update(it); PlayTile.request(it) }
     }

@@ -211,6 +211,7 @@ fun SettingsPage(vm: LibVM, section: Int, back: () -> Unit) {
                     }
                     3 -> {
                         Group("Arayüz stili") { StylePicker() }
+                        Group("Uygulama simgesi") { AppIconPicker() }
                         Group("Vurgu rengi") {
                             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {

@@ -59,13 +59,15 @@ data class UiStyle(
     val grad: List<Long> = emptyList(),
     val radius: Int = 20, val titleWeight: Int = 900, val titleSize: Int = 0,
     val floatNav: Boolean = false,
-    val play: PlayLook = PlayLook()
+    val play: PlayLook = PlayLook(),
+    /** Renk geçişli oynat düğmesinin ikinci rengi (btn = 4). */
+    val btn2: Long = 0xFFFFB35C
 ) {
     companion object {
         val ALL = listOf(
             UiStyle("Mavi Gece", "Koyu, mavi vurgu, kalın başlıklar", true, 0xFF07080B, 0xFF16181E, 0xFF23262E, 0xFFECECEF, 0xFFB4B7C0, 0xFF3E8BFF, play = PlayLook()),
             UiStyle("Cam", "Mavi geçişli zemin, turkuaz vurgu, yüzen alt çubuk", true, 0xFF08131F, 0xFF12263A, 0xFF1B3550, 0xFFEEF8FF, 0xFFA9C4D9, 0xFF2DD4BF,
-                grad = listOf(0xFF123C70, 0xFF0A1A30, 0xFF06343A), radius = 26, floatNav = true, play = PlayLook(art = 1, bg = 1, btn = 4, seek = 3, center = true)),
+                grad = listOf(0xFF123C70, 0xFF0A1A30, 0xFF06343A), radius = 26, floatNav = true, play = PlayLook(art = 1, bg = 1, btn = 4, seek = 3, center = true), btn2 = 0xFF3B82F6),
             UiStyle("Siyah Sade", "Saf siyah, köşeli, ince başlık, turuncu", true, 0xFF000000, 0xFF0C0C0C, 0xFF181818, 0xFFEAEAEA, 0xFF8A8A8A, 0xFFFF7A1A,
                 radius = 6, titleWeight = 300, titleSize = 40, play = PlayLook(art = 2, bg = 2, btn = 2, seek = 2, glass = false)),
             UiStyle("Açık Pastel", "Beyaz zemin, yumuşak renkler", false, 0xFFF4F5FB, 0xFFFFFFFF, 0xFFE9EAF4, 0xFF1D1F2B, 0xFF6E7389, 0xFF5B5BD6,
@@ -82,6 +84,27 @@ data class UiStyle(
                 radius = 12, play = PlayLook(art = 3, bg = 2, btn = 2, seek = 1, center = true, glass = false)),
             UiStyle("Grafit", "Gri tonlar, altın vurgu", true, 0xFF1B1C1F, 0xFF26272B, 0xFF313237, 0xFFF0F0F2, 0xFFA3A4AB, 0xFFE8B931,
                 radius = 16, titleWeight = 700, play = PlayLook(art = 2, bg = 2, btn = 3, seek = 2)),
+            // ---- karma stiller: mevcutların beğenilen özelliklerinden ----
+            UiStyle("Lavanta", "Açık lila zemin, mor vurgu, plak çalar", false, 0xFFF6F3FB, 0xFFFFFFFF, 0xFFECE6F6, 0xFF22192F, 0xFF7A6E8C, 0xFF8B5CF6,
+                radius = 24, floatNav = true, play = PlayLook(art = 1, bg = 3, btn = 4, seek = 3, center = true, glass = false), btn2 = 0xFFEC4899),
+            UiStyle("Gece Yarısı", "Lacivert geçiş, altın vurgu, parlayan kapak", true, 0xFF0B1020, 0xFF151B30, 0xFF1F2740, 0xFFEEF1FA, 0xFF9AA3BF, 0xFFF5C451,
+                grad = listOf(0xFF1A2350, 0xFF0B1020), radius = 20, floatNav = true, play = PlayLook(art = 3, bg = 1, btn = 3, seek = 3, center = true)),
+            UiStyle("Mercan", "Sıcak açık zemin, mercan vurgu", false, 0xFFFFF5F2, 0xFFFFFFFF, 0xFFFBE4DD, 0xFF2A1612, 0xFF8A6A62, 0xFFFF6B5A,
+                radius = 22, floatNav = true, play = PlayLook(art = 0, bg = 3, btn = 4, seek = 1, center = true, glass = false)),
+            UiStyle("Kutup Işığı", "Yeşil-mor geçiş, nane vurgu, yüzen alt çubuk", true, 0xFF07110F, 0xFF10201C, 0xFF18302A, 0xFFE9FFF8, 0xFF98BFB3, 0xFF34D399,
+                grad = listOf(0xFF0E3B35, 0xFF07110F, 0xFF1E1440), radius = 26, floatNav = true, play = PlayLook(art = 1, bg = 1, btn = 4, seek = 3, center = true), btn2 = 0xFF8B5CF6),
+            UiStyle("Kahve", "Koyu kahve, karamel vurgu, köşeli kapak", true, 0xFF15100C, 0xFF211912, 0xFF2D231A, 0xFFF5ECE3, 0xFFB4A291, 0xFFD9A066,
+                radius = 14, titleWeight = 800, play = PlayLook(art = 2, bg = 2, btn = 3, seek = 1, glass = false)),
+            UiStyle("Buz", "Açık soğuk tonlar, ince büyük başlık", false, 0xFFF2F7FB, 0xFFFFFFFF, 0xFFE3EDF5, 0xFF0F1C2A, 0xFF64788C, 0xFF0EA5E9,
+                radius = 18, titleWeight = 300, titleSize = 40, play = PlayLook(art = 2, bg = 3, btn = 2, seek = 2, glass = false)),
+            UiStyle("Bordo", "Şarap kırmızısı geçiş, gül vurgu", true, 0xFF140A0D, 0xFF22121A, 0xFF301A24, 0xFFFBEFF2, 0xFFC4A3AE, 0xFFF43F5E,
+                grad = listOf(0xFF3A0F1E, 0xFF140A0D), radius = 20, play = PlayLook(art = 3, bg = 0, btn = 1, seek = 3, center = true)),
+            UiStyle("Retro", "Mor zemin, sarı vurgu, kalın başlık", true, 0xFF1A1625, 0xFF252036, 0xFF312A47, 0xFFFFF8E7, 0xFFBDB3D6, 0xFFFACC15,
+                radius = 8, titleWeight = 900, titleSize = 40, play = PlayLook(art = 2, bg = 2, btn = 3, seek = 1, center = true, glass = false)),
+            UiStyle("Nane", "Açık nane yeşili, yumuşak köşeler, plak", false, 0xFFF1FAF6, 0xFFFFFFFF, 0xFFDDF2E8, 0xFF0F2A20, 0xFF5C7D70, 0xFF10B981,
+                radius = 26, floatNav = true, play = PlayLook(art = 1, bg = 3, btn = 1, seek = 3, center = true, glass = false)),
+            UiStyle("Uzay", "Derin siyah, mor-camgöbeği geçiş", true, 0xFF030308, 0xFF0E0E1A, 0xFF181828, 0xFFF2F2FF, 0xFF9C9CC0, 0xFF818CF8,
+                grad = listOf(0xFF151536, 0xFF030308, 0xFF031A24), radius = 22, floatNav = true, play = PlayLook(art = 3, bg = 1, btn = 4, seek = 3, center = true), btn2 = 0xFF22D3EE),
         )
     }
 }

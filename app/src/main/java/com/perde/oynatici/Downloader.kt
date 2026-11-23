@@ -323,6 +323,8 @@ object Dl {
     }
 
     val activeCount get() = jobs.count { it.active }
+    /** Bildirimden "Ekle ve indir" denince liste okunurken servis kapanmasın. */
+    @Volatile var preparing = 0
 
     /** Kuyruğu işletir: Wi-Fi kuralı ve aynı anda indirme sınırı. */
     /** Bekleyenlerin iniş sırası: önce öncelik, sonra eklenme sırası (en eski önce). */
@@ -729,11 +731,40 @@ object Dl {
                     val i = follows.indexOfFirst { it.url == f.url }
                     if (i >= 0) { follows[i] = follows[i].copy(newIds = fresh); saveFollows() }
                 }
-                if (notify) notifyDone(ctx, "${f.title}: ${fresh.size} yeni video", "Kadraj > İndir sekmesinden tek dokunuşla indirebilirsin")
+                // aynı yeniler için tekrar tekrar bildirim gelmesin: yalnızca önceki kontrolde görülmeyen yeni varsa
+                if (notify && fresh.any { it !in f.newIds }) notifyFollow(ctx, f, fresh.size)
             }
         }
         Prefs.sp.edit().putLong("dlFollowChk", System.currentTimeMillis()).apply()
         return total
+    }
+
+    private fun notifyFollow(c: Context, f: Follow, n: Int) {
+        val nm = c.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        DownloadService.channel(nm)
+        val id = 5000 + (f.url.hashCode() and 0xFFF)
+        val open = PendingIntent.getActivity(c, id, Intent(c, MainActivity::class.java).putExtra("openDownloads", true)
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE)
+        val dl = Intent(c, DownloadService::class.java).setAction(DownloadService.FOLLOW_DL).putExtra("url", f.url).putExtra("nid", id)
+        val dlPi = if (Build.VERSION.SDK_INT >= 26) PendingIntent.getForegroundService(c, id, dl, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            else PendingIntent.getService(c, id, dl, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val what = if (f.opts.audio) "şarkı" else "video"
+        nm.notify(id, NotificationCompat.Builder(c, "follow").setSmallIcon(R.drawable.ic_download)
+            .setContentTitle("${f.title}: $n yeni $what").setContentText("Listeye eklemek ve indirmek için dokun")
+            .setAutoCancel(true).setContentIntent(open)
+            .addAction(R.drawable.ic_download, "Ekle ve indir", dlPi).build())
+    }
+
+    /** Bildirimden: takip edilen listenin yenilerini listeye ekleyip indirir (servis içinde). */
+    fun downloadFollowNow(ctx: Context, url: String) {
+        init(ctx)
+        val f = follows.firstOrNull { it.url == url } ?: return
+        preparing++
+        Thread {
+            try { Web.init(ctx); kotlinx.coroutines.runBlocking { downloadNew(ctx, f) } }
+            catch (e: Exception) { Report.err("takip indirme", e) }
+            finally { main.postDelayed({ preparing-- }, 1500) }
+        }.start()
     }
 
     /** Takip edilen listenin yeni videolarını indir. */
@@ -756,8 +787,12 @@ object Dl {
 /** İndirmeler ekran kapansa da sürsün diye ön plan servisi. */
 class DownloadService : Service() {
     companion object {
+        const val FOLLOW_DL = "com.perde.oynatici.FOLLOW_DL"
         fun channel(nm: NotificationManager) {
-            if (Build.VERSION.SDK_INT >= 26) nm.createNotificationChannel(NotificationChannel("dl", "İndirmeler", NotificationManager.IMPORTANCE_LOW))
+            if (Build.VERSION.SDK_INT >= 26) {
+                nm.createNotificationChannel(NotificationChannel("dl", "İndirmeler", NotificationManager.IMPORTANCE_LOW))
+                nm.createNotificationChannel(NotificationChannel("follow", "Takip edilen listeler", NotificationManager.IMPORTANCE_DEFAULT))
+            }
         }
     }
     private val h = Handler(Looper.getMainLooper())
@@ -773,6 +808,7 @@ class DownloadService : Service() {
         val open = PendingIntent.getActivity(this, 7, Intent(this, MainActivity::class.java).putExtra("openDownloads", true)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE)
         val title = when {
+            run.isEmpty() && act.isEmpty() && Dl.preparing > 0 -> "Kadraj · Liste kontrol ediliyor…"
             run.isEmpty() && act.any { it.state == Job.WAIT } -> "Kadraj · Wi-Fi bekleniyor"
             run.size == 1 -> run[0].title.take(50)
             else -> "Kadraj · ${run.size} indirme sürüyor"
@@ -791,7 +827,7 @@ class DownloadService : Service() {
 
     private val tick = object : Runnable {
         override fun run() {
-            if (Dl.activeCount == 0) { Dl.totalBps = 0; Dl.speedHist.clear(); ServiceCompat.stopForeground(this@DownloadService, ServiceCompat.STOP_FOREGROUND_REMOVE); stopSelf(); started = false; return }
+            if (Dl.activeCount == 0 && Dl.preparing == 0) { Dl.totalBps = 0; Dl.speedHist.clear(); ServiceCompat.stopForeground(this@DownloadService, ServiceCompat.STOP_FOREGROUND_REMOVE); stopSelf(); started = false; return }
             Dl.sampleSpeed()
             nm.notify(41, notif())
             h.postDelayed(this, 1000)
@@ -800,6 +836,10 @@ class DownloadService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         ServiceCompat.startForeground(this, 41, notif(), if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0)
+        if (intent?.action == FOLLOW_DL) {
+            intent.getIntExtra("nid", 0).takeIf { it != 0 }?.let { nm.cancel(it) }
+            intent.getStringExtra("url")?.let { Dl.downloadFollowNow(this, it) }
+        }
         if (!started) { started = true; h.post(tick) }
         return START_NOT_STICKY
     }

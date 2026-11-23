@@ -259,8 +259,12 @@ private suspend fun PointerInputScope.playerGestures(a: PlayerActivity) {
 // ---------------- katmanlar ----------------
 @Composable
 private fun BoxScope.DoubleTapOverlay(ui: PlayerUi) {
-    val side = ui.tapSide
-    AnimatedVisibility(side != 0, enter = fadeIn(tween(120)), exit = fadeOut(tween(250)),
+    // kaybolurken (solma animasyonu) sıfırlanmış değer "+0 sn" görünmesin: son gösterilen taraf/süre korunur
+    var lastSide by remember { mutableIntStateOf(1) }
+    var lastTotal by remember { mutableIntStateOf(0) }
+    if (ui.tapSide != 0) { lastSide = ui.tapSide; lastTotal = ui.tapTotal }
+    val side = lastSide
+    AnimatedVisibility(ui.tapSide != 0, enter = fadeIn(tween(120)), exit = fadeOut(tween(250)),
         modifier = Modifier.align(if (side < 0) Alignment.CenterStart else Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(0.38f)) {
         val shape = if (side < 0) RoundedCornerShape(topEndPercent = 50, bottomEndPercent = 50) else RoundedCornerShape(topStartPercent = 50, bottomStartPercent = 50)
         Box(Modifier.fillMaxSize().clip(shape).background(Color.White.copy(alpha = 0.13f)), contentAlignment = Alignment.Center) {
@@ -270,7 +274,7 @@ private fun BoxScope.DoubleTapOverlay(ui: PlayerUi) {
                         Icon(if (side < 0) Icons.Filled.FastRewind else Icons.Filled.FastForward, null, tint = Color.White.copy(alpha = 0.5f + i * 0.25f), modifier = Modifier.size(22.dp))
                     }
                 }
-                Text("${if (side < 0) "−" else "+"}${ui.tapTotal} sn", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text("${if (side < 0) "−" else "+"}$lastTotal sn", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
             }
         }
     }

@@ -75,11 +75,27 @@ object LastQueue {
 }
 
 /**
- * Arama gelince (çalarken, telefon ya da WhatsApp gibi uygulama araması) çalan şarkı/video durur, arama bitince kendiliğinden sürmez.
+ * Arama gelince (çalarken, telefon ya da WhatsApp gibi uygulama araması) çalan şarkı/video durur;
+ * arama yüzünden durduysa arama bitince kaldığı yerden sürer.
  * Android 12+: ses modu dinlenir (izin gerekmez). Daha eskisi: telefon durumu dinlenir (bu sürümlerde izin gerekmez).
  */
 object CallPause {
     private var started = false
+    private var pausedByCall = false
+    var calling = false; private set
+
+    private fun onCall(active: Boolean, why: String) {
+        if (active) {
+            if (!calling) { calling = true; if (Headset.pauseNow(why)) pausedByCall = true }
+        } else if (calling) {
+            calling = false
+            if (pausedByCall) {
+                pausedByCall = false
+                // arama sesi kapanırken hoparlöre kısa süre taşmasın
+                Handler(Looper.getMainLooper()).postDelayed({ Engine.player?.let { if (!it.playWhenReady && it.mediaItemCount > 0) { it.play(); Report.log("duraklatma", "arama bitti, devam") } } }, 1200)
+            }
+        }
+    }
     private fun inCall(mode: Int) = mode == AudioManager.MODE_RINGTONE || mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION
 
     fun start(app: Context) {
@@ -88,14 +104,14 @@ object CallPause {
         try {
             if (android.os.Build.VERSION.SDK_INT >= 31) {
                 val am = app.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                am.addOnModeChangedListener({ r -> main.post(r) }) { mode -> if (inCall(mode)) Headset.pauseNow("arama (ses modu $mode)") }
+                am.addOnModeChangedListener({ r -> main.post(r) }) { mode -> onCall(inCall(mode), "arama (ses modu $mode)") }
             } else {
                 val tm = app.getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
                 main.post {
                     @Suppress("DEPRECATION")
                     tm.listen(object : android.telephony.PhoneStateListener() {
                         @Deprecated("eski API") override fun onCallStateChanged(state: Int, phoneNumber: String?) {
-                            if (state != android.telephony.TelephonyManager.CALL_STATE_IDLE) Headset.pauseNow("arama")
+                            onCall(state != android.telephony.TelephonyManager.CALL_STATE_IDLE, "arama")
                         }
                     }, android.telephony.PhoneStateListener.LISTEN_CALL_STATE)
                 }
@@ -127,6 +143,7 @@ object Headset {
             // Bluetooth/kablolu kulaklık çıkınca hoparlörden çalmaya devam etmesin (bazı telefonlar "noisy" yayınını göndermiyor)
             override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) {
                 if (removed.none { it.isSink && it.type in OUT }) return
+                if (CallPause.calling) return   // aramada ses yolu değişir; aramadan sonra devam etsin
                 pauseNow("kulaklık/Bluetooth ayrıldı")
             }
         }, Handler(Looper.getMainLooper()))
@@ -134,10 +151,10 @@ object Headset {
     }
 
     /** Çalan şarkı ya da video ne ise durdurur. */
-    fun pauseNow(why: String) {
-        val p = Engine.player ?: return
-        if (!p.playWhenReady) return
-        p.pause(); Report.log("duraklatma", why)
+    fun pauseNow(why: String): Boolean {
+        val p = Engine.player ?: return false
+        if (!p.playWhenReady) return false
+        p.pause(); Report.log("duraklatma", why); return true
     }
 
     private fun bind(ctx: Context) {

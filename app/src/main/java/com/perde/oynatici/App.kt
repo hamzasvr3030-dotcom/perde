@@ -21,6 +21,7 @@ class App : Application(), SingletonImageLoader.Factory {
         Shortcuts.setup(this)
         MediaWatch.start(this)
         Headset.start(this)
+        FollowWorker.schedule(this)
     }
 
     override fun newImageLoader(context: PlatformContext): ImageLoader =

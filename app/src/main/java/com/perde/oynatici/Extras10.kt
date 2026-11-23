@@ -36,7 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** Ayarlar › Tema: 10 arayüz stili, her biri küçük bir telefon önizlemesiyle. Dokununca hemen uygulanır. */
+/** Ayarlar › Tema: 20 arayüz stili, her biri küçük bir telefon önizlemesiyle. Dokununca hemen uygulanır. */
 @Composable
 fun StylePicker() {
     val ctx = LocalContext.current
@@ -110,7 +110,7 @@ fun PlayBtn(kind: Int, playing: Boolean, size: androidx.compose.ui.unit.Dp, onCl
         1 -> Modifier.background(Accent) to onAcc
         2 -> Modifier.border(2.5.dp, Accent, CircleShape).background(Accent.copy(alpha = 0.12f)) to Accent
         3 -> Modifier.background(Accent) to onAcc
-        4 -> Modifier.background(Brush.linearGradient(listOf(Accent, lerpC(Accent, Color(if (ThemeState.style.name == "Cam") 0xFF3B82F6 else 0xFFFFB35C), 0.55f)))) to Color.White
+        4 -> Modifier.background(Brush.linearGradient(listOf(Accent, lerpC(Accent, Color(ThemeState.style.btn2), 0.55f)))) to Color.White
         else -> Modifier.background(Color.White) to Color(0xFF111114)
     }
     Box(Modifier.size(size)

@@ -11,8 +11,8 @@ android {
         applicationId = "com.perde.oynatici"
         minSdk = 26
         targetSdk = 36
-        versionCode = 36
-        versionName = "2.0.0"
+        versionCode = 37
+        versionName = "2.1.0"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
@@ -59,6 +59,7 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("androidx.palette:palette-ktx:1.0.0")
+    implementation("androidx.work:work-runtime-ktx:2.10.1")   // takip edilen listelerin arka plan kontrolü
 
     implementation("androidx.media3:media3-exoplayer:$media3")
     implementation("androidx.media3:media3-exoplayer-hls:$media3")

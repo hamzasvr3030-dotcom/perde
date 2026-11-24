@@ -173,7 +173,7 @@ object Headset {
             Handler(Looper.getMainLooper()).post {
                 val idx = songs.indexOfFirst { it.key == q.first.getOrNull(q.second) }.coerceAtLeast(0)
                 Engine.playSongs(ctx, songs, idx)
-                if (q.third > 3000) Engine.player?.seekTo(idx, q.third)
+                if (Prefs.resumeMusic && q.third > 3000) Engine.player?.seekTo(idx, q.third)   // ayar kapalıysa şarkı baştan
                 bind(ctx)
                 Report.log("kulaklık", "son liste sürdürüldü (${songs.size} şarkı)")
             }

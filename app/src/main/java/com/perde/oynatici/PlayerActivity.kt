@@ -461,6 +461,7 @@ class PlayerActivity : AppCompatActivity() {
         subSource(key)?.let { Subs.prepare(this, it, Prefs.subOff(key)) }
 
     private fun savedPos(key: String): Long {
+        if (isAudioName(key) && !Prefs.resumeMusic) return 0   // şarkı burada açılsa da baştan başlar
         val p = Prefs.pos(key); val d = Prefs.dur(key)
         return if (p > 3000 && (d <= 0 || p < d - 5000)) p else 0
     }

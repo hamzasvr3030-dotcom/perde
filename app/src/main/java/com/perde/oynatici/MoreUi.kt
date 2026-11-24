@@ -186,7 +186,7 @@ fun SettingsPage(vm: LibVM, section: Int, back: () -> Unit) {
                         Group("Geçiş") {
                             SetChoice("Yumuşak geçiş", listOf("Kapalı", "2 sn", "4 sn", "6 sn", "8 sn", "12 sn"), listOf(0, 2, 4, 6, 8, 12).indexOf(Prefs.crossfade).coerceAtLeast(0)) { Prefs.crossfade = listOf(0, 2, 4, 6, 8, 12)[it]; ver++ }
                             GroupSwitch(Icons.Filled.SkipNext, "Sessizliği atla", "Şarkı başı ve sonundaki sessizlik", Prefs.skipSilence) { Prefs.skipSilence = it; Engine.player?.skipSilenceEnabled = it }
-                            GroupSwitch(Icons.Filled.History, "Şarkıları kaldığı yerden sürdür", "Yarıda bıraktığın şarkı oradan başlar", Prefs.resumeMusic) { Prefs.resumeMusic = it }
+                            GroupSwitch(Icons.Filled.History, "Şarkıları kaldığı yerden sürdür", "Kapalıyken şarkılar hep baştan başlar (videolar her zaman kaldığı yerden)", Prefs.resumeMusic) { Prefs.resumeMusic = it }
                             GroupRow(Icons.Filled.BatteryChargingFull, "Ekran kapanınca kesilmesin", if (BgGuard.ok(ctx)) "Pil kısıtlaması kapalı ✓" else "Pil kısıtlamasını kapat") { BgGuard.request(ctx) }
                             if (BgGuard.xiaomi) GroupRow(Icons.Filled.RestartAlt, "Otomatik başlatma (Xiaomi)", "Xiaomi'de müziğin kesilmemesi için aç") { BgGuard.autostart(ctx) }
                             GroupSwitch(Icons.Filled.Image, "Eksik kapakları internetten bul", "Kapağı olmayan şarkıya kapak bulup kalıcı kaydeder", Prefs.fetchCovers) { Prefs.fetchCovers = it }

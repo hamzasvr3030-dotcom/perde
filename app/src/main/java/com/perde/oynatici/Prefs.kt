@@ -61,7 +61,7 @@ object Prefs {
     var eqBands by StrP("eqBands", "")
     var bass by IntP("bass", 0)
     var musicBoost by IntP("musicBoost", 0)
-    var resumeMusic by BoolP("resumeMusic", true)
+    var resumeMusic by BoolP("resumeMusic2", false)   // müzik baştan başlar (eski "resumeMusic"=açık kaydı yok sayılır); videolar kaldığı yerden
     var fetchCovers by BoolP("fetchCovers", true)
     var coverAccent by BoolP("coverAccent", false)   // kapalı: seçilen tema rengi korunur
     var folderNext by BoolP("folderNext", true)

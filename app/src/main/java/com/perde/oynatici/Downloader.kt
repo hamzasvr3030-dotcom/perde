@@ -128,7 +128,7 @@ class DlGroup(val id: String, val title: String, val audio: Boolean, val playlis
 
 data class HistItem(val key: String, val title: String, val url: String, val file: String?, val audio: Boolean, val at: Long, val ok: Boolean, val note: String)
 
-data class Follow(val url: String, val title: String, val opts: DlOpts, val playlistId: Long?, val known: Set<String>, val newIds: List<String>, val dir: String)
+data class Follow(val url: String, val title: String, val opts: DlOpts, val playlistId: Long?, val known: Set<String>, val newIds: List<String>, val dir: String, val checkedAt: Long = 0L)
 
 object Dl {
     val jobs = mutableStateListOf<Job>()
@@ -704,7 +704,7 @@ object Dl {
             for (i in 0 until a.length()) a.getJSONObject(i).let { f ->
                 val k = f.optJSONArray("k") ?: JSONArray(); val n = f.optJSONArray("n") ?: JSONArray()
                 follows += Follow(f.getString("u"), f.getString("t"), DlOpts.from(f.getJSONObject("o")), f.optLong("p", -1).takeIf { it >= 0 },
-                    (0 until k.length()).map { k.getString(it) }.toSet(), (0 until n.length()).map { n.getString(it) }, f.optString("d"))
+                    (0 until k.length()).map { k.getString(it) }.toSet(), (0 until n.length()).map { n.getString(it) }, f.optString("d"), f.optLong("c"))
             }
         } catch (e: Exception) { Report.err("takip listesi okuma", e) }
     }
@@ -713,7 +713,7 @@ object Dl {
         val a = JSONArray()
         follows.forEach { f ->
             a.put(JSONObject().put("u", f.url).put("t", f.title).put("o", f.opts.json()).put("p", f.playlistId ?: -1L)
-                .put("k", JSONArray(f.known.toList())).put("n", JSONArray(f.newIds)).put("d", f.dir))
+                .put("k", JSONArray(f.known.toList())).put("n", JSONArray(f.newIds)).put("d", f.dir).put("c", f.checkedAt))
         }
         Prefs.sp.edit().putString("dlFollows", a.toString()).apply()
     }
@@ -721,22 +721,52 @@ object Dl {
     /** Takip edilen listelerde yeni video var mı? (arka planda çağrılır) */
     suspend fun checkFollows(ctx: Context, notify: Boolean): Int {
         var total = 0
-        for (f in follows.toList()) {
-            val a = try { Web.analyze(ctx, f.url) } catch (_: Exception) { continue }
-            if (a !is Web.Analysis.Multi) continue
-            val fresh = a.entries.map { it.id }.filter { it !in f.known }
-            if (fresh.isNotEmpty()) {
-                total += fresh.size
-                main.post {
-                    val i = follows.indexOfFirst { it.url == f.url }
-                    if (i >= 0) { follows[i] = follows[i].copy(newIds = fresh); saveFollows() }
-                }
-                // aynı yeniler için tekrar tekrar bildirim gelmesin: yalnızca önceki kontrolde görülmeyen yeni varsa
-                if (notify && fresh.any { it !in f.newIds }) notifyFollow(ctx, f, fresh.size)
-            }
-        }
+        for (f in follows.toList()) total += maxOf(0, checkFollow(ctx, f, notify))
         Prefs.sp.edit().putLong("dlFollowChk", System.currentTimeMillis()).apply()
         return total
+    }
+
+    /** Tek listeyi kontrol eder: yeni sayısı, okunamazsa -1. */
+    suspend fun checkFollow(ctx: Context, f: Follow, notify: Boolean): Int {
+        val a = try { Web.analyze(ctx, f.url) } catch (_: Exception) { return -1 }
+        if (a !is Web.Analysis.Multi) return -1
+        val fresh = a.entries.map { it.id }.filter { it !in f.known }
+        main.post {
+            val i = follows.indexOfFirst { it.url == f.url }
+            if (i >= 0) { follows[i] = follows[i].copy(newIds = fresh, checkedAt = System.currentTimeMillis()); saveFollows() }
+        }
+        // aynı yeniler için tekrar tekrar bildirim gelmesin: yalnızca önceki kontrolde görülmeyen yeni varsa
+        if (notify && fresh.isNotEmpty() && fresh.any { it !in f.newIds }) notifyFollow(ctx, f, fresh.size)
+        return fresh.size
+    }
+
+    /**
+     * Bağlantıdan listeyi takibe alır. Şu anki öğeler "bilinen" sayılır, yalnızca sonradan eklenenler yeni olur.
+     * all = true ise şu anki öğeler de hemen indirilir. Hata metni döner, başarılıysa null.
+     */
+    suspend fun addFollow(ctx: Context, url: String, audio: Boolean, playlistId: Long?, all: Boolean): String? {
+        init(ctx)
+        val u = url.trim()
+        if (follows.any { it.url == u }) return "Bu liste zaten takip ediliyor"
+        val a = try { Web.analyze(ctx, u) } catch (e: Exception) { return "Liste açılamadı: ${e.message?.take(80) ?: "bağlantıyı kontrol et"}" }
+        if (a !is Web.Analysis.Multi) return "Bu bağlantı bir liste ya da kanal değil"
+        val ids = a.entries.map { it.id }
+        val opts = DlOpts.defaults(audio)
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+            val pid = playlistId ?: Playlists.create(a.title, music = audio).id
+            if (all) addList(ctx, a.title, a.entries, opts, follow = true, sourceUrl = u, allIds = ids, existingPlaylist = pid)
+            else {
+                follows += Follow(u, a.title, opts, pid, ids.toSet(), emptyList(), outDir(audio, a.title).absolutePath, System.currentTimeMillis())
+                saveFollows()
+            }
+        }
+        return null
+    }
+
+    /** Yeni öğelerin ekleneceği Kadraj listesini değiştirir. */
+    fun setFollowPlaylist(f: Follow, pid: Long) {
+        val i = follows.indexOfFirst { it.url == f.url }; if (i < 0) return
+        follows[i] = follows[i].copy(playlistId = pid); saveFollows()
     }
 
     private fun notifyFollow(c: Context, f: Follow, n: Int) {

@@ -132,7 +132,7 @@ fun DownloadScreen(go: (Route) -> Unit) {
     }) { Box(Modifier.fillMaxSize()) {
         LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp)) {
             item {
-                Box(Modifier.padding(bottom = 14.dp)) { PillSwitch(listOf("Bağlantı", "YouTube'da ara"), mode) { mode = it } }
+                Box(Modifier.padding(bottom = 14.dp)) { PillSwitch(listOf("Bağlantı", "YouTube'da ara", "Takip"), mode) { mode = it } }
             }
             if (mode == 0) {
                 item {
@@ -179,7 +179,7 @@ fun DownloadScreen(go: (Route) -> Unit) {
                         null -> {}
                     }
                 }
-            } else {
+            } else if (mode == 1) {
                 item {
                     OutlinedTextField(query, { query = it }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), singleLine = true,
                         label = { Text("Şarkı, video veya kanal ara") }, leadingIcon = { Icon(Icons.Filled.Search, null) },
@@ -203,9 +203,10 @@ fun DownloadScreen(go: (Route) -> Unit) {
             }
 
             // ---- takip edilen listeler ----
-            if (Dl.follows.isNotEmpty()) {
-                item { SectionTitle("Takip edilen listeler", "Kontrol et") { scope.launch { val n = Dl.checkFollows(ctx, false); toast(ctx, if (n > 0) "$n yeni video bulundu" else "Yeni video yok") } } }
-                items(Dl.follows, key = { "f" + it.url }) { f -> FollowRow(f, onDownload = { scope.launch { Dl.downloadNew(ctx, f) }; toast(ctx, "Yeni videolar sıraya eklendi") }, onRemove = { Dl.unfollow(f) }) }
+            if (mode == 2) {
+                item { FollowHeader() }
+                if (Dl.follows.isEmpty()) item { FollowEmpty() }
+                items(Dl.follows, key = { "f" + it.url }) { f -> FollowCard(f) }
             }
 
             // ---- indirmeler ----
@@ -397,18 +398,6 @@ private fun SearchRow(e: Web.Entry, onPlay: () -> Unit, onVideo: () -> Unit, onA
     }
 }
 
-@Composable
-private fun FollowRow(f: Follow, onDownload: () -> Unit, onRemove: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(16.dp)).background(Surf).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(Icons.Filled.Notifications, null, tint = Accent)
-        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-            Text(f.title, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(if (f.newIds.isEmpty()) "Yeni video yok · ${if (f.opts.audio) "ses" else "video"}" else "${f.newIds.size} yeni video", color = if (f.newIds.isEmpty()) Muted else Accent, fontSize = 12.sp)
-        }
-        if (f.newIds.isNotEmpty()) Button(onClick = onDownload) { Text("İndir") }
-        IconButton(onClick = onRemove) { Icon(Icons.Filled.NotificationsOff, "Takibi bırak", tint = Muted) }
-    }
-}
 
 private fun sourceOf(url: String, audio: Boolean, list: Boolean = false): Pair<ImageVector, Color> {
     val site = Web.site(url)

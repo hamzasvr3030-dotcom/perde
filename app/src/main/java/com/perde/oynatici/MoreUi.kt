@@ -116,7 +116,13 @@ fun MoreScreen(vm: LibVM, go: (Route) -> Unit) {
             Group("Oynatıcı") {
                 GroupRow(Icons.Filled.SmartDisplay, "Video oynatıcı ayarları", "Hareketler, kaldığı yer, gece modu") { go(Route.SettingsPage(0)) }
                 GroupRow(Icons.Filled.MusicNote, "Müzik çalar ayarları", "Yumuşak geçiş, sessizlik, şarkı sözleri") { go(Route.SettingsPage(1)) }
-                GroupRow(Icons.Filled.Subtitles, "Altyazı tercihleri", "Boyut, kodlama, online altyazı", last = true) { go(Route.SettingsPage(2)) }
+                GroupRow(Icons.Filled.Subtitles, "Altyazı tercihleri", "Boyut, kodlama, online altyazı") { go(Route.SettingsPage(2)) }
+                var resume by remember { mutableStateOf(0) }
+                androidx.lifecycle.compose.LifecycleResumeEffect(Unit) { resume++; onPauseOrDispose { } }
+                val vSum = remember(resume) { DefaultOpener.summary(ctx, DefaultOpener.Kind.VIDEO) }
+                val aSum = remember(resume) { DefaultOpener.summary(ctx, DefaultOpener.Kind.AUDIO) }
+                GroupRow(Icons.Filled.OndemandVideo, "Varsayılan video oynatıcı", vSum) { toast(ctx, DefaultOpener.start(ctx, DefaultOpener.Kind.VIDEO)) }
+                GroupRow(Icons.Filled.LibraryMusic, "Varsayılan müzik çalar", aSum, last = true) { toast(ctx, DefaultOpener.start(ctx, DefaultOpener.Kind.AUDIO)) }
             }
             Group("Görünüm") {
                 GroupRow(Icons.Filled.Palette, "Tema ve arayüz", ThemeState.style.name + (ThemeState.ACCENTS.getOrNull(ThemeState.accentIdx)?.let { " · " + it.second } ?: "") + if (ThemeState.amoled) " · OLED" else "") { go(Route.SettingsPage(3)) }
@@ -193,7 +199,8 @@ fun SettingsPage(vm: LibVM, section: Int, back: () -> Unit) {
                             GroupRow(Icons.Filled.ImageSearch, "Eksik kapakları şimdi bul", "Bütün şarkılar taranır") { toast(ctx, "Kapaklar aranıyor…"); CoverNet.fetchAll(ctx, vm.songs) { n -> toast(ctx, if (n > 0) "$n kapak bulundu" else "Yeni kapak bulunamadı") } }
                             GroupSwitch(Icons.Filled.Palette, "Kapak rengini tema rengi yap", "Çalan şarkının kapağına göre uygulamanın rengi değişir", Prefs.coverAccent) { Prefs.coverAccent = it; CoverTint.update(ctx, if (it) NowState.key.takeIf { k -> k.isNotEmpty() } else null) }
                             GroupSwitch(Icons.Filled.Headphones, "Kulaklık takınca devam et", "Kablolu ya da Bluetooth kulaklık bağlanınca son müzik sürer", Prefs.headsetResume) { Prefs.headsetResume = it }
-                            GroupSwitch(Icons.Filled.VolumeUp, "Şarkıya göre sesi hatırla", null, Prefs.rememberLevels, last = true) { Prefs.rememberLevels = it }
+                            GroupSwitch(Icons.Filled.VolumeUp, "Şarkıya göre sesi hatırla", "Kapalıyken telefon sesi şarkı geçişinde değişmez", Prefs.rememberSongVol) { Prefs.rememberSongVol = it }
+                            GroupSwitch(Icons.Filled.GraphicEq, "Ses düzeyini eşitle", "Yüksek kaydedilmiş şarkıları kısar, alçakları açar — her şarkı aynı seste", Prefs.normalize, last = true) { Prefs.normalize = it; if (NowState.isMusic) Engine.norm.enabled = it }
                         }
                         Group("Sözler ve ses") {
                             GroupSwitch(Icons.Filled.Lyrics, "İnternetten şarkı sözü", ".lrc yoksa LRCLIB'den bulunur", Prefs.onlineLyrics) { Prefs.onlineLyrics = it }

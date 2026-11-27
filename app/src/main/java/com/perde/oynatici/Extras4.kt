@@ -185,6 +185,8 @@ object Headset {
 object Levels {
     fun saveVol(k: String, v: Float) { if (Prefs.rememberLevels) Prefs.sp.edit().putFloat("vol:$k", v).apply() }
     fun saveBright(k: String, v: Float) { if (Prefs.rememberLevels) Prefs.sp.edit().putFloat("br:$k", v).apply() }
+    fun saveSongVol(k: String, v: Float) { if (Prefs.rememberSongVol) Prefs.sp.edit().putFloat("svol:$k", v).apply() }
+    fun songVol(k: String): Float? = if (Prefs.rememberSongVol && Prefs.sp.contains("svol:$k")) Prefs.sp.getFloat("svol:$k", 0.5f) else null
     fun vol(k: String): Float? = if (Prefs.rememberLevels && Prefs.sp.contains("vol:$k")) Prefs.sp.getFloat("vol:$k", 0.5f) else null
     fun bright(k: String): Float? = if (Prefs.rememberLevels && Prefs.sp.contains("br:$k")) Prefs.sp.getFloat("br:$k", 0.5f) else null
 }

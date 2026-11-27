@@ -37,6 +37,7 @@ object Engine {
     val night = NightProcessor()
     val viz = VizProcessor()
     val fx = FxProcessor()
+    val norm = NormalizeProcessor()
     var audioOnly = false
     var sleepEnd = false
     var sleptAt = 0L
@@ -142,11 +143,12 @@ object Engine {
         fx.enabled = true
         if (item.mediaMetadata.mediaType != androidx.media3.common.MediaMetadata.MEDIA_TYPE_MUSIC) {
             if (musicBoostOn) { setBoost(0); musicBoostOn = false }   // müzik yükseltmesi videoya taşmasın
-            fx.enabled = false
+            fx.enabled = false; norm.enabled = false
             if (lastMusicKey != null) { lastMusicKey = null; ThemeState.dyn = null }   // müziğe dönünce kapak rengi yeniden hesaplansın
             return
         }
         applyMusicBoost()
+        norm.enabled = Prefs.normalize; norm.startSong(item.mediaId)
         LastQueue.save((0 until minOf(p.mediaItemCount, 500)).map { p.getMediaItemAt(it).mediaId }, p.currentMediaItemIndex, p.currentPosition)
         val k = item.mediaId
         if (k == lastMusicKey) return
@@ -157,8 +159,8 @@ object Engine {
         }
         val am = appCtx?.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager ?: return
         val max = am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC).toFloat()
-        lastMusicKey?.let { Levels.saveVol(it, am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) / max) }
-        Levels.vol(k)?.let { v -> try { am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, Math.round(v.coerceIn(0f, 1f) * max), 0) } catch (_: Exception) { } }
+        lastMusicKey?.let { Levels.saveSongVol(it, am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) / max) }
+        Levels.songVol(k)?.let { v -> try { am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, Math.round(v.coerceIn(0f, 1f) * max), 0) } catch (_: Exception) { } }
         lastMusicKey = k
         appCtx?.let { CoverTint.update(it, k) }
     }
@@ -189,7 +191,7 @@ object Engine {
                 DefaultAudioSink.Builder(context)
                     .setEnableFloatOutput(false)
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                    .setAudioProcessorChain(DefaultAudioSink.DefaultAudioProcessorChain(delay, night, fx, viz))
+                    .setAudioProcessorChain(DefaultAudioSink.DefaultAudioProcessorChain(delay, night, norm, fx, viz))
                     .build()
         }
         rf.setExtensionRendererMode(
@@ -218,7 +220,7 @@ object Engine {
             override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) { if (shuffleModeEnabled) handler.post { setShuffle(true) } }
             override fun onEvents(player: Player, events: Player.Events) {
                 if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_IS_PLAYING_CHANGED)) musicBookkeeping(p)
-                if (events.containsAny(Player.EVENT_IS_PLAYING_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_MEDIA_METADATA_CHANGED, Player.EVENT_TIMELINE_CHANGED)) {
+                if (events.containsAny(Player.EVENT_IS_PLAYING_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_MEDIA_METADATA_CHANGED, Player.EVENT_TIMELINE_CHANGED, Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED, Player.EVENT_REPEAT_MODE_CHANGED)) {
                     NowState.refresh(); appCtx?.let { PerdeWidget.update(it); MusicWidget.update(it); PlayTile.request(it) }
                 }
             }

@@ -549,6 +549,7 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
                 val side = minOf(maxWidth * 0.84f, maxHeight * 0.96f)
                 val sp = constraints.maxWidth * 0.78f
                 SideEffect { slotPx.floatValue = sp }
+                @Suppress("UNUSED_VARIABLE") val qv = NowState.ver   // sıra değişince komşu kapaklar da yenilensin
                 val frac = swipe.value / sp
                 val n = p.mediaItemCount
                 listOf(-1 to p.previousMediaItemIndex, 1 to p.nextMediaItemIndex, 0 to p.currentMediaItemIndex).forEach { (d, idx) ->
@@ -621,7 +622,7 @@ fun NowPlayingScreen(vm: LibVM, close: () -> Unit) {
             }
         }
 
-        NextCard(p) { sheet = NpSheet.QUEUE }
+        NextCard(p, NowState.ver) { sheet = NpSheet.QUEUE }
         // sütunun 22dp kenar boşluğunu aşıp ekran kenarına kadar uzanır: son düğme kenar boşluğunda sertçe kesilmez
         Row(Modifier.fillMaxWidth().layout { m, c ->
                 val ex = 44.dp.roundToPx(); val pl = m.measure(c.copy(minWidth = c.maxWidth + ex, maxWidth = c.maxWidth + ex))
@@ -759,7 +760,8 @@ private fun PeekArt(idx: Int, p: Player, m: Modifier) {
 }
 
 @Composable
-private fun NextCard(p: Player, open: () -> Unit) {
+/** [ver]: NowState sürümü — oynatıcı nesnesi aynı kaldığı için Compose kartı atlıyordu; sıra değişince anında yenilensin. */
+private fun NextCard(p: Player, @Suppress("UNUSED_PARAMETER") ver: Int, open: () -> Unit) {
     val ni = p.nextMediaItemIndex
     if (ni == C.INDEX_UNSET) return
     val it = p.getMediaItemAt(ni); val s = Music.byKey(it.mediaId)

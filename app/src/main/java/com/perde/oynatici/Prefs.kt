@@ -76,6 +76,10 @@ object Prefs {
     var autoMeta by BoolP("autoMeta", false)
     var headsetResume by BoolP("hsResume", true)
     var rememberLevels by BoolP("remLevels", true)
+    /** Müzikte şarkı başına sistem sesini hatırla — varsayılan KAPALI (şarkı geçişlerinde ses zıplıyordu). */
+    var rememberSongVol by BoolP("remSongVol", false)
+    /** Şarkılar arası ses eşitleme (NormalizeProcessor). */
+    var normalize by BoolP("normalize", true)
 
     // Diğer
     var pinHash by StrP("pin", "")

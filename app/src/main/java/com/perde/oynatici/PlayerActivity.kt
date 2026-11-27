@@ -259,6 +259,8 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Ayarlar > Varsayılan açıcı'dan gelen deneme dosyası: oynatma, sadece onayla
+        if (DefaultOpener.isProbe(intent?.data)) { toast(this, "Tamam — dosyalar artık Kadraj ile açılacak"); finish(); return }
         WindowCompat.setDecorFitsSystemWindows(window, false)
         if (Build.VERSION.SDK_INT >= 28) window.attributes = window.attributes.apply {
             layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
@@ -319,6 +321,7 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        if (DefaultOpener.isProbe(intent.data)) { toast(this, "Tamam — dosyalar artık Kadraj ile açılacak"); return }
         setIntent(intent)
         handleIntent(intent)
     }
